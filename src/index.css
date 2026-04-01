@@ -1,0 +1,66 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-heading: "Montserrat", sans-serif;
+  
+  --color-corp-blue: #1d2b7b;
+  --color-corp-blue-light: #4a90e2;
+  --color-corp-accent: #0066cc;
+  --color-corp-orange: #f97316;
+  --color-bg-light: #f8fafc;
+}
+
+@layer base {
+  @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700;800;900&family=Inter:wght@300;400;500;600&display=swap');
+  
+  body {
+    @apply font-sans bg-slate-50 text-slate-900 antialiased;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-heading tracking-tight;
+  }
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-white/80 backdrop-blur-md border border-white/20 shadow-xl;
+  }
+
+  .bento-item {
+    @apply bg-white border border-slate-200 rounded-2xl p-8 transition-all duration-500 hover:shadow-2xl hover:-translate-y-1 overflow-hidden relative;
+  }
+
+  .bento-item::before {
+    content: '';
+    @apply absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-corp-blue to-corp-blue-light opacity-0 transition-opacity duration-500;
+  }
+
+  .bento-item:hover::before {
+    @apply opacity-100;
+  }
+
+  .input-modern {
+    @apply w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3.5 text-sm transition-all outline-none focus:bg-white focus:border-corp-blue focus:ring-4 focus:ring-corp-blue/5;
+  }
+
+  .btn-modern-primary {
+    @apply bg-corp-blue text-white px-8 py-4 font-semibold rounded-xl shadow-lg shadow-corp-blue/20 transition-all hover:bg-corp-blue/90 hover:shadow-xl hover:scale-[1.02] active:scale-[0.98] flex items-center justify-center gap-3;
+  }
+
+  .btn-modern-outline {
+    @apply bg-white text-corp-blue border-2 border-corp-blue/10 px-8 py-4 font-semibold rounded-xl transition-all hover:bg-slate-50 hover:border-corp-blue/20 flex items-center justify-center gap-3;
+  }
+
+  .section-label {
+    @apply text-corp-blue-light font-semibold uppercase tracking-[0.4em] text-[10px] mb-4 block;
+  }
+}
+
+@media print {
+  body * { display: none !important; }
+  #invoice-print-area, #invoice-print-area * { display: block !important; visibility: visible !important; }
+  #invoice-print-area { position: absolute; left: 0; top: 0; width: 100%; background: white; }
+  .no-print { display: none !important; }
+}
