@@ -56,6 +56,10 @@
   .section-label {
     @apply text-corp-blue-light font-semibold uppercase tracking-[0.4em] text-[10px] mb-4 block;
   }
+
+  .label-corp {
+    @apply text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-1.5 block truncate;
+  }
 }
 
 @media print {

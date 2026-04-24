@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, ErrorInfo, ReactNode } from 'react';
 import { 
   Phone, 
   Mail, 
@@ -16,15 +16,157 @@ import {
   Ship,
   Plane,
   Menu,
-  X
+  X,
+  LogIn,
+  LogOut,
+  Save,
+  History,
+  User,
+  ShieldAlert,
+  Shield,
+  AlertTriangle
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { 
+  signInWithPopup, 
+  GoogleAuthProvider, 
+  onAuthStateChanged, 
+  signOut, 
+  User as FirebaseUser 
+} from 'firebase/auth';
+import { 
+  collection, 
+  addDoc, 
+  query, 
+  where, 
+  onSnapshot, 
+  orderBy, 
+  Timestamp,
+  doc,
+  getDocFromServer
+} from 'firebase/firestore';
+import { auth, db } from './firebase';
+import { toJpeg } from 'html-to-image';
+import { jsPDF } from 'jspdf';
+import { logoBase64 } from './logoBase64';
+
+// --- Error Handling ---
+
+enum OperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: OperationType;
+  path: string | null;
+  authInfo: {
+    userId: string | undefined;
+    email: string | null | undefined;
+    emailVerified: boolean | undefined;
+    isAnonymous: boolean | undefined;
+    tenantId: string | null | undefined;
+    providerInfo: {
+      providerId: string;
+      displayName: string | null;
+      email: string | null;
+      photoUrl: string | null;
+    }[];
+  }
+}
+
+function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData.map(provider => ({
+        providerId: provider.providerId,
+        displayName: provider.displayName,
+        email: provider.email,
+        photoUrl: provider.photoURL
+      })) || []
+    },
+    operationType,
+    path
+  }
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
+
+interface ErrorBoundaryProps {
+  children: ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: ErrorInfo) {
+    console.error("ErrorBoundary caught an error", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      let message = "Ocorreu um erro inesperado.";
+      try {
+        if (this.state.error?.message) {
+          const parsed = JSON.parse(this.state.error.message);
+          if (parsed.error) message = `Erro no Banco de Dados: ${parsed.error}`;
+        }
+      } catch {
+        message = this.state.error?.message || message;
+      }
+
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6">
+          <div className="bg-white p-10 rounded-3xl shadow-2xl max-w-md w-full text-center space-y-6">
+            <div className="w-20 h-20 bg-red-50 text-red-500 rounded-full flex items-center justify-center mx-auto">
+              <X size={40} />
+            </div>
+            <h2 className="text-2xl font-heading font-bold text-slate-900">Ops! Algo deu errado</h2>
+            <p className="text-slate-600">{message}</p>
+            <button 
+              onClick={() => window.location.reload()}
+              className="btn-modern-primary w-full"
+            >
+              Recarregar Página
+            </button>
+          </div>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
 
 // --- Types ---
 
 interface Product {
   id: number;
   descricao: string;
+  imageUrl?: string;
   valorUnitario: number;
   taxaEnvioFornecedor: number;
   quantidade: number;
@@ -43,13 +185,43 @@ interface CalculationResult {
   total: number;
   cbmTotal: number;
   pesoTotal: number;
+  cbmFaturado: number;
+  pesoFaturado: number;
 }
 
 // --- Components ---
 
 export default function App() {
+  return (
+    <ErrorBoundary>
+      <AppContent />
+    </ErrorBoundary>
+  );
+}
+
+function AppContent() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
+  const [savedQuotes, setSavedQuotes] = useState<any[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [showFraudCheck, setShowFraudCheck] = useState(false);
+  const [fraudData, setFraudData] = useState({
+    empresa: '',
+    website: '',
+    email: '',
+    metodoPagamento: 'banco_empresa',
+    tempoMercado: 'mais_5',
+    alibabaVerified: 'nao_aplica',
+    tradeAssurance: 'sim',
+    priceComparison: 'normal',
+    amostras: 'sim'
+  });
+  const [fraudResult, setFraudResult] = useState<{ score: number, level: string, messages: string[] } | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [moeda, setMoeda] = useState('USD');
+  const [nomeCliente, setNomeCliente] = useState('');
   const [taxaProcessamento, setTaxaProcessamento] = useState(0);
   const [comissaoServicos, setComissaoServicos] = useState(0);
   const [taxaLevantamento, setTaxaLevantamento] = useState(0);
@@ -74,6 +246,117 @@ export default function App() {
       pesoUnitario: 0
     }
   ]);
+
+  // --- Firebase Auth ---
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setIsAuthReady(true);
+    });
+    return () => unsubscribe();
+  }, []);
+
+  useEffect(() => {
+    async function testConnection() {
+      try {
+        await getDocFromServer(doc(db, 'test', 'connection'));
+      } catch (error) {
+        if(error instanceof Error && error.message.includes('the client is offline')) {
+          console.error("Please check your Firebase configuration. ");
+        }
+      }
+    }
+    testConnection();
+  }, []);
+
+  useEffect(() => {
+    if (!user || !isAuthReady) {
+      setSavedQuotes([]);
+      return;
+    }
+
+    const path = 'quotes';
+    const q = query(
+      collection(db, path),
+      where('userId', '==', user.uid),
+      orderBy('createdAt', 'desc')
+    );
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const quotes = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setSavedQuotes(quotes);
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, path);
+    });
+
+    return () => unsubscribe();
+  }, [user, isAuthReady]);
+
+  const handleLogin = async () => {
+    try {
+      const provider = new GoogleAuthProvider();
+      await signInWithPopup(auth, provider);
+    } catch (error) {
+      console.error("Login error", error);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await signOut(auth);
+    } catch (error) {
+      console.error("Logout error", error);
+    }
+  };
+
+  const handleSaveQuote = async () => {
+    if (!user) {
+      handleLogin();
+      return;
+    }
+
+    setIsSaving(true);
+    const path = 'quotes';
+    try {
+      await addDoc(collection(db, path), {
+        userId: user.uid,
+        moeda,
+        nomeCliente,
+        total: results.total,
+        tipoTransporte,
+        taxaProcessamento,
+        comissaoServicos,
+        taxaLevantamento,
+        taxasAduaneiras,
+        freteInternacional,
+        taxaEnvioLocal,
+        calcularRevenda,
+        margemLucro,
+        custosAdicionais,
+        produtos: produtos.map(p => ({
+          descricao: p.descricao,
+          imageUrl: p.imageUrl || '',
+          valorUnitario: p.valorUnitario,
+          quantidade: p.quantidade,
+          taxaEnvioFornecedor: p.taxaEnvioFornecedor,
+          comprimento: p.comprimento,
+          largura: p.largura,
+          altura: p.altura,
+          pesoUnitario: p.pesoUnitario
+        })),
+        createdAt: Timestamp.now()
+      });
+      alert("Cotação salva com sucesso!");
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, path);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   // --- Calculations ---
 
@@ -118,7 +401,11 @@ export default function App() {
 
     const valorTaxaProc = subtotalProdutos * (Number(taxaProcessamento) / 100);
     const valorComissao = subtotalProdutos * (Number(comissaoServicos) / 100);
-    const baseCalculoEnvio = tipoTransporte === 'maritimo' ? cbmTotal : pesoTotal;
+    
+    const cbmFaturado = cbmTotal > 0 ? Math.max(0.1, cbmTotal) : 0;
+    const pesoFaturado = pesoTotal > 0 ? Math.max(0.5, pesoTotal) : 0;
+    
+    const baseCalculoEnvio = tipoTransporte === 'maritimo' ? cbmFaturado : pesoFaturado;
     const custosEnvio = (baseCalculoEnvio * Number(taxasAduaneiras)) + (baseCalculoEnvio * Number(freteInternacional)) + Number(taxaEnvioLocal);
 
     let total = subtotalProdutos + valorTaxaProc + valorComissao + Number(taxaLevantamento) + custosEnvio;
@@ -135,7 +422,9 @@ export default function App() {
       custosEnvio,
       total,
       cbmTotal,
-      pesoTotal
+      pesoTotal,
+      cbmFaturado,
+      pesoFaturado
     };
   }, [produtos, taxaProcessamento, comissaoServicos, taxaLevantamento, tipoTransporte, taxasAduaneiras, freteInternacional, taxaEnvioLocal, calcularRevenda, margemLucro, custosAdicionais]);
 
@@ -172,6 +461,7 @@ export default function App() {
       setProdutos([{
         id: Date.now(),
         descricao: '',
+        imageUrl: '',
         valorUnitario: 0,
         taxaEnvioFornecedor: 0,
         quantidade: 1,
@@ -180,6 +470,7 @@ export default function App() {
         altura: 0,
         pesoUnitario: 0
       }]);
+      setNomeCliente('');
       setTaxaProcessamento(0);
       setComissaoServicos(0);
       setTaxaLevantamento(0);
@@ -192,8 +483,116 @@ export default function App() {
     }
   };
 
-  const imprimirFatura = () => {
-    window.print();
+  const verificarFornecedor = () => {
+    let score = 0;
+    let messages: string[] = [];
+
+    const emailLower = fraudData.email.toLowerCase();
+    if (emailLower.includes('@gmail.com') || emailLower.includes('@yahoo.') || emailLower.includes('@hotmail.')) {
+      score += 30;
+      messages.push("Uso de email gratuito (Gmail/Yahoo) para negócios B2B é altamente suspeito.");
+    } else if (emailLower && fraudData.website && !fraudData.website.includes(emailLower.split('@')[1])) {
+       score += 10;
+       messages.push("O domínio do email não corresponde ao domínio do website.");
+    }
+
+    if (['western_union', 'cripto', 'banco_pessoal'].includes(fraudData.metodoPagamento)) {
+      score += 50;
+      messages.push("Método de pagamento não rastreável ou pessoal. Risco crítico de fraude.");
+    }
+
+    if (fraudData.website && !fraudData.website.startsWith('https://')) {
+      score += 15;
+      messages.push("Website não possui certificado de segurança (HTTPS).");
+    }
+
+    if (fraudData.tempoMercado === 'menos_1') {
+      score += 20;
+      messages.push("Empresa com menos de 1 ano de mercado. Exija documentação adicional.");
+    }
+
+    if (fraudData.alibabaVerified === 'nao') {
+      score += 15;
+      messages.push("Fornecedor não possui selo de 'Verified Supplier' (Fornecedor Verificado) na plataforma.");
+    }
+
+    if (fraudData.tradeAssurance === 'nao') {
+      score += 40;
+      messages.push("Recusa em usar Trade Assurance (Garantia de Pagamento da plataforma). Risco altíssimo de golpe.");
+    }
+
+    if (fraudData.priceComparison === 'muito_baixo') {
+      score += 20;
+      messages.push("Preço excessivamente abaixo do mercado ('Bom demais para ser verdade'). Cuidado com fraudes ou má qualidade.");
+    }
+
+    if (fraudData.amostras === 'nao') {
+      score += 25;
+      messages.push("Fornecedor recusa o envio de amostras. Forte indício de empresa fantasma ou produto inexistente.");
+    }
+
+    let level = 'Baixo Risco';
+    if (score >= 60) level = 'Alto Risco';
+    else if (score >= 25) level = 'Risco Moderado';
+
+    const displayScore = Math.min(score, 100);
+
+    setFraudResult({ score: displayScore, level, messages });
+  };
+
+  const limparVerificacao = () => {
+    setFraudData({
+      empresa: '',
+      website: '',
+      email: '',
+      metodoPagamento: 'banco_empresa',
+      tempoMercado: 'mais_5',
+      alibabaVerified: 'nao_aplica',
+      tradeAssurance: 'sim',
+      priceComparison: 'normal',
+      amostras: 'sim'
+    });
+    setFraudResult(null);
+  };
+
+  const imprimirFatura = async () => {
+    const element = document.getElementById('invoice-print-area');
+    if (!element) {
+      alert("Erro interno: A área de impressão não foi encontrada.");
+      return;
+    }
+
+    try {
+      setIsGeneratingPdf(true);
+      // Temporarily remove hidden and pointer-events-none
+      element.classList.remove('hidden', 'pointer-events-none');
+      element.style.display = 'block';
+
+      // Let the DOM update before rendering
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      const dataUrl = await toJpeg(element, { quality: 0.98, backgroundColor: '#ffffff', pixelRatio: 2 });
+      
+      const pdf = new jsPDF({
+        orientation: 'portrait',
+        unit: 'px',
+        format: 'a4'
+      });
+
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (element.offsetHeight * pdfWidth) / element.offsetWidth;
+
+      pdf.addImage(dataUrl, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`Fatura_Proforma_PrimeWay_${Date.now()}.pdf`);
+    } catch (error) {
+      console.error("Erro ao gerar PDF:", error);
+      alert("Ocorreu um erro ao gerar a fatura. Por favor, tente novamente.");
+    } finally {
+      // Restore hidden class
+      element.classList.add('hidden', 'pointer-events-none');
+      element.style.display = '';
+      setIsGeneratingPdf(false);
+    }
   };
 
   const formatoMoeda = (valor: number) => {
@@ -204,7 +603,7 @@ export default function App() {
     <div className="min-h-screen flex flex-col">
       {/* WhatsApp Button */}
       <a 
-        href="https://wa.me/258826921467?text=Olá,%20gostaria%20de%20saber%20mais%20sobre%20os%20serviços%20da%20PrimeWay!" 
+        href="https://wa.me/258842914655?text=Olá,%20gostaria%20de%20saber%20mais%20sobre%20os%20serviços%20da%20PrimeWay!" 
         target="_blank" 
         rel="noreferrer"
         className="fixed bottom-8 right-8 bg-[#25D366] text-white w-14 h-14 rounded-full flex items-center justify-center shadow-2xl z-50 hover:scale-110 transition-transform no-print"
@@ -218,7 +617,7 @@ export default function App() {
       <div className="bg-corp-blue text-white py-2 px-6 hidden md:block no-print text-[10px] font-medium tracking-widest uppercase">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
           <div className="flex gap-6">
-            <span className="flex items-center gap-1.5"><Phone size={12} className="text-corp-orange" /> +258 82 692 1467</span>
+            <span className="flex items-center gap-1.5"><Phone size={12} className="text-corp-orange" /> +258 84 291 4655</span>
             <span className="flex items-center gap-1.5"><Mail size={12} className="text-corp-orange" /> primewayinvestelogistica@gmail.com</span>
           </div>
           <div className="flex gap-4">
@@ -249,6 +648,39 @@ export default function App() {
                 {item}
               </a>
             ))}
+            
+            {isAuthReady && (
+              user ? (
+                <div className="flex items-center gap-4">
+                  <button 
+                    onClick={() => setShowHistory(!showHistory)}
+                    className="text-slate-600 hover:text-corp-blue transition-colors relative"
+                    title="Histórico de Cotações"
+                  >
+                    <History size={20} />
+                    {savedQuotes.length > 0 && (
+                      <span className="absolute -top-1 -right-1 bg-corp-orange text-white text-[8px] w-4 h-4 rounded-full flex items-center justify-center">
+                        {savedQuotes.length}
+                      </span>
+                    )}
+                  </button>
+                  <div className="flex items-center gap-2 pl-4 border-l border-slate-200">
+                    <img src={user.photoURL || ''} alt={user.displayName || ''} className="w-8 h-8 rounded-full border border-slate-200" />
+                    <button onClick={handleLogout} className="text-slate-400 hover:text-red-500 transition-colors">
+                      <LogOut size={18} />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button 
+                  onClick={handleLogin}
+                  className="flex items-center gap-2 text-xs font-bold text-corp-blue uppercase tracking-widest hover:text-corp-blue-light transition-colors"
+                >
+                  <LogIn size={18} /> Entrar
+                </button>
+              )
+            )}
+
             <a href="#simulador" className="btn-modern-primary !py-3 !px-6 !text-[11px]">
               Cotação Online
             </a>
@@ -278,6 +710,49 @@ export default function App() {
                   {item}
                 </a>
               ))}
+
+              {isAuthReady && (
+                user ? (
+                  <div className="flex flex-col gap-4 py-4 border-t border-slate-100">
+                    <div className="flex items-center gap-3">
+                      <img src={user.photoURL || ''} alt={user.displayName || ''} className="w-10 h-10 rounded-full border border-slate-200" />
+                      <div className="flex flex-col">
+                        <span className="text-sm font-bold text-slate-900">{user.displayName}</span>
+                        <span className="text-xs text-slate-500">{user.email}</span>
+                      </div>
+                    </div>
+                    <button 
+                      onClick={() => {
+                        setShowHistory(true);
+                        setIsMenuOpen(false);
+                      }}
+                      className="flex items-center gap-3 text-sm font-semibold text-slate-600 uppercase tracking-widest"
+                    >
+                      <History size={20} /> Histórico
+                    </button>
+                    <button 
+                      onClick={() => {
+                        handleLogout();
+                        setIsMenuOpen(false);
+                      }}
+                      className="flex items-center gap-3 text-sm font-semibold text-red-500 uppercase tracking-widest"
+                    >
+                      <LogOut size={20} /> Sair
+                    </button>
+                  </div>
+                ) : (
+                  <button 
+                    onClick={() => {
+                      handleLogin();
+                      setIsMenuOpen(false);
+                    }}
+                    className="flex items-center gap-3 text-sm font-bold text-corp-blue uppercase tracking-widest py-4 border-t border-slate-100"
+                  >
+                    <LogIn size={20} /> Entrar com Google
+                  </button>
+                )
+              )}
+
               <a 
                 href="#simulador" 
                 className="bg-corp-accent text-white text-sm font-semibold px-6 py-4 uppercase tracking-widest text-center rounded-sm"
@@ -291,7 +766,7 @@ export default function App() {
       </nav>
 
       {/* Hero Section */}
-      <header id="inicio" className="relative bg-slate-900 text-white min-h-[70vh] md:min-h-[90vh] flex items-center px-6 overflow-hidden no-print">
+      <header id="inicio" className="relative bg-slate-900 text-white min-h-[60vh] md:min-h-[80vh] flex items-center px-6 overflow-hidden no-print">
         <div className="absolute inset-0">
           <motion.video 
             autoPlay 
@@ -318,16 +793,12 @@ export default function App() {
             initial={{ opacity: 0, y: 30 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.8 }}
-            className="max-w-3xl space-y-10"
+            className="max-w-3xl space-y-8"
           >
-            <span className="section-label !text-white !mb-0">Excelência em cada Importação</span>
-            <h2 className="font-heading font-bold text-6xl md:text-8xl leading-[0.9] uppercase tracking-tighter">
-              A Sua Ponte <br /><span className="text-corp-blue-light">Para o Mundo.</span>
+            <h2 className="font-heading font-bold text-5xl md:text-7xl lg:text-8xl leading-[0.9] uppercase tracking-tighter">
+              Excelência em <br /><span className="text-corp-blue-light">cada importação.</span>
             </h2>
-            <p className="text-xl text-slate-300 font-light leading-relaxed max-w-2xl">
-              Especialistas em conectar Moçambique aos principais mercados globais. Soluções integradas de importação e exportação com foco em eficiência e redução de custos.
-            </p>
-            <div className="flex flex-col sm:flex-row gap-5 pt-4">
+            <div className="flex flex-col sm:flex-row gap-4 pt-4">
               <a href="#simulador" className="btn-modern-primary">
                 Simular Cotação <ChevronRight size={20} />
               </a>
@@ -369,43 +840,34 @@ export default function App() {
       </div>
 
       {/* About Section */}
-      <section id="a-empresa" className="py-16 md:py-32 px-6 bg-slate-50 no-print">
-        <div className="max-w-7xl mx-auto grid lg:grid-cols-2 gap-12 lg:gap-24 items-center">
-          <div className="space-y-8">
-            <span className="section-label">A Nossa Identidade</span>
-            <h2 className="font-heading font-bold text-5xl md:text-6xl text-slate-900 leading-[0.9] uppercase tracking-tighter">
-              Excelência em cada Importação.
+      <section id="a-empresa" className="py-12 md:py-20 px-6 bg-slate-50 no-print">
+        <div className="max-w-7xl mx-auto grid lg:grid-cols-2 gap-8 lg:gap-16 items-center">
+          <div className="space-y-6">
+            <h2 className="font-heading font-bold text-4xl md:text-6xl text-slate-900 leading-[0.9] uppercase tracking-tighter">
+              A Nossa Identidade.
             </h2>
-            <div className="space-y-6 text-slate-600 leading-relaxed text-lg">
+            <div className="space-y-4 text-slate-600 leading-relaxed text-base md:text-lg">
               <p>
-                A <strong className="text-corp-blue">PRIMEWAY INVEST & LOGÍSTICA</strong> é mais do que um operador logístico. Somos o seu parceiro estratégico na expansão de negócios internacionais.
+                A <strong className="text-corp-blue">PRIMEWAY INVEST & LOGÍSTICA</strong> é o seu parceiro estratégico. Garantimos que a sua mercadoria chegue ao destino com segurança, rapidez e transparência.
               </p>
-              <p>
-                Com uma rede global de parceiros e infraestrutura própria, garantimos que a sua mercadoria chegue ao destino com a máxima segurança e o menor tempo de trânsito possível.
-              </p>
-            </div>
-            <div className="pt-4">
-              <a href="#simulador" className="btn-modern-outline">
-                Conheça a Nossa História
-              </a>
             </div>
           </div>
           
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {[
-              { title: 'Transparência', desc: 'Processos claros e rastreabilidade total em cada etapa.', icon: <ShieldCheck size={24} /> },
-              { title: 'Confiança', desc: 'Compromisso inabalável com prazos e integridade.', icon: <Clock size={24} /> },
-              { title: 'Inovação', desc: 'Tecnologia aplicada para otimizar a sua cadeia logística.', icon: <CheckCircle2 size={24} /> },
-              { title: 'Presença', desc: 'Conectamos Moçambique aos 5 continentes.', icon: <Globe size={24} /> }
+              { title: 'Transparência', desc: 'Processos claros.', icon: <ShieldCheck size={20} /> },
+              { title: 'Confiança', desc: 'Compromisso com prazos.', icon: <Clock size={20} /> },
+              { title: 'Inovação', desc: 'Tecnologia aplicada.', icon: <CheckCircle2 size={20} /> },
+              { title: 'Presença', desc: 'Conexão global.', icon: <Globe size={20} /> }
             ].map((item, i) => (
               <motion.div 
                 key={i}
-                whileHover={{ y: -10 }}
-                className="bento-item"
+                whileHover={{ y: -5 }}
+                className="bento-item !p-6"
               >
-                <div className="text-corp-blue mb-6">{item.icon}</div>
-                <h4 className="font-heading font-semibold text-slate-900 mb-3 uppercase text-xs tracking-widest">{item.title}</h4>
-                <p className="text-sm text-slate-500 leading-relaxed">{item.desc}</p>
+                <div className="text-corp-blue mb-4">{item.icon}</div>
+                <h4 className="font-heading font-semibold text-slate-900 mb-2 uppercase text-[10px] tracking-widest">{item.title}</h4>
+                <p className="text-xs text-slate-500 leading-relaxed">{item.desc}</p>
               </motion.div>
             ))}
           </div>
@@ -413,54 +875,44 @@ export default function App() {
       </section>
 
       {/* Services Section */}
-      <section id="serviços" className="py-16 md:py-32 px-6 bg-white no-print">
+      <section id="serviços" className="py-12 md:py-20 px-6 bg-white no-print">
         <div className="max-w-7xl mx-auto">
-          <div className="text-center max-w-3xl mx-auto mb-24">
-            <span className="section-label">O Nosso Portfólio</span>
-            <h2 className="font-heading font-bold text-5xl text-slate-900 uppercase tracking-tighter mt-4">Soluções Logísticas</h2>
-            <p className="text-slate-500 text-lg leading-relaxed mt-6">
-              Modelos de negócio flexíveis desenhados para responder às necessidades específicas da sua empresa.
-            </p>
+          <div className="text-center max-w-3xl mx-auto mb-12">
+            <h2 className="font-heading font-bold text-4xl md:text-5xl text-slate-900 uppercase tracking-tighter">Soluções Logísticas</h2>
           </div>
 
-          <div className="grid md:grid-cols-2 gap-8 md:gap-12">
+          <div className="grid md:grid-cols-2 gap-6 md:gap-8">
             {/* Modelo Assistida */}
             <motion.div 
-              whileHover={{ y: -10 }}
-              className="bento-item !p-16 border-t-8 border-corp-blue-light"
+              whileHover={{ y: -5 }}
+              className="bento-item !p-8 border-t-4 border-corp-blue-light"
             >
-              <div className="text-corp-blue mb-10">
-                <Package size={56} strokeWidth={1} />
+              <div className="text-corp-blue mb-6">
+                <Package size={40} strokeWidth={1} />
               </div>
-              <h3 className="font-heading font-bold text-3xl text-slate-900 mb-6 uppercase tracking-tight">Importação Assistida</h3>
-              <p className="text-slate-500 mb-10 text-lg leading-relaxed">
-                Ideal para quem já tem fornecedores mas precisa de um parceiro logístico de confiança para garantir a integridade da operação.
-              </p>
-              <ul className="space-y-5 text-[10px] text-slate-400 font-semibold uppercase tracking-[0.3em] border-t border-slate-100 pt-10">
-                <li className="flex items-center gap-4"><span className="w-2 h-2 bg-corp-blue-light rounded-full"></span> Recepção no Armazém China</li>
-                <li className="flex items-center gap-4"><span className="w-2 h-2 bg-corp-blue-light rounded-full"></span> Consolidação de Cargas</li>
-                <li className="flex items-center gap-4"><span className="w-2 h-2 bg-corp-blue-light rounded-full"></span> Frete Marítimo/Aéreo</li>
-                <li className="flex items-center gap-4"><span className="w-2 h-2 bg-corp-blue-light rounded-full"></span> Despacho Aduaneiro</li>
+              <h3 className="font-heading font-bold text-2xl text-slate-900 mb-6 uppercase tracking-tight">Importação Assistida</h3>
+              <ul className="space-y-4 text-[10px] text-slate-500 font-semibold uppercase tracking-[0.3em]">
+                <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 bg-corp-blue-light rounded-full"></span> Recepção China</li>
+                <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 bg-corp-blue-light rounded-full"></span> Consolidação</li>
+                <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 bg-corp-blue-light rounded-full"></span> Frete Mar/Ar</li>
+                <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 bg-corp-blue-light rounded-full"></span> Despacho</li>
               </ul>
             </motion.div>
 
             {/* Modelo Completa */}
             <motion.div 
-              whileHover={{ y: -10 }}
-              className="bento-item !p-16 !bg-slate-900 !text-white border-t-8 border-corp-blue"
+              whileHover={{ y: -5 }}
+              className="bento-item !p-8 !bg-slate-900 !text-white border-t-4 border-corp-blue"
             >
-              <div className="text-corp-blue-light mb-10">
-                <Ship size={56} strokeWidth={1} />
+              <div className="text-corp-blue-light mb-6">
+                <Ship size={40} strokeWidth={1} />
               </div>
-              <h3 className="font-heading font-bold text-3xl text-white mb-6 uppercase tracking-tight">Importação Completa</h3>
-              <p className="text-slate-400 mb-10 text-lg leading-relaxed">
-                Serviço Turn-key. Indique o produto e nós executamos todas as etapas, desde a busca pelo fornecedor até a entrega na sua porta.
-              </p>
-              <ul className="space-y-5 text-[10px] text-slate-500 font-semibold uppercase tracking-[0.3em] border-t border-white/5 pt-10">
-                <li className="flex items-center gap-4"><span className="w-2 h-2 bg-corp-blue rounded-full"></span> Busca & Negociação na Origem</li>
-                <li className="flex items-center gap-4"><span className="w-2 h-2 bg-corp-blue rounded-full"></span> Pagamento Internacional</li>
-                <li className="flex items-center gap-4"><span className="w-2 h-2 bg-corp-blue rounded-full"></span> Embalamento Profissional</li>
-                <li className="flex items-center gap-4"><span className="w-2 h-2 bg-corp-blue rounded-full"></span> Logística End-to-End</li>
+              <h3 className="font-heading font-bold text-2xl text-white mb-6 uppercase tracking-tight">Importação Completa</h3>
+              <ul className="space-y-4 text-[10px] text-slate-400 font-semibold uppercase tracking-[0.3em]">
+                <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 bg-corp-blue rounded-full"></span> Busca & Negoc.</li>
+                <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 bg-corp-blue rounded-full"></span> Pagamento Int.</li>
+                <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 bg-corp-blue rounded-full"></span> Embalamento</li>
+                <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 bg-corp-blue rounded-full"></span> Logística E2E</li>
               </ul>
             </motion.div>
           </div>
@@ -468,177 +920,196 @@ export default function App() {
       </section>
 
       {/* Simulator Section */}
-      <main id="simulador" className="max-w-7xl mx-auto px-6 py-16 md:py-32 space-y-16 no-print">
+      <main id="simulador" className="max-w-7xl mx-auto px-6 py-12 md:py-20 space-y-8 no-print">
         <div className="text-center max-w-3xl mx-auto">
-          <span className="section-label">Ferramenta de Cotação</span>
-          <h2 className="font-heading font-bold text-5xl text-slate-900 uppercase tracking-tighter mt-4">Simulador Inteligente</h2>
-          <p className="text-slate-500 text-lg leading-relaxed mt-6">
-            Obtenha uma estimativa precisa dos seus custos logísticos em segundos. Transparência total, sem taxas ocultas.
-          </p>
+          <h2 className="font-heading font-bold text-3xl md:text-5xl text-slate-900 uppercase tracking-tighter">Simulador Inteligente</h2>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-12">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           {/* Inputs Column */}
-          <div className="lg:col-span-2 space-y-12">
+          <div className="lg:col-span-2 space-y-8">
             
             {/* 1. Parameters */}
-            <section className="bento-item !p-10">
-              <h3 className="font-heading font-semibold text-xs text-corp-blue mb-10 uppercase tracking-[0.3em] flex items-center gap-3">
-                <span className="w-8 h-8 rounded-lg bg-corp-blue/5 flex items-center justify-center text-[10px]">01</span>
-                Parâmetros da Operação
+            <section className="bento-item !p-6 md:!p-8">
+              <h3 className="font-heading font-semibold text-xs text-corp-blue mb-6 uppercase tracking-[0.3em] flex items-center gap-3">
+                <span className="w-6 h-6 rounded-md bg-corp-blue/5 flex items-center justify-center text-[10px]">01</span>
+                Parâmetros
               </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
+                <div className="md:col-span-2">
+                  <label className="label-corp">Nome do Cliente / Empresa</label>
+                  <input 
+                    type="text" 
+                    value={nomeCliente} 
+                    onChange={(e) => setNomeCliente(e.target.value)}
+                    className="input-modern font-semibold !py-2.5 !px-3 text-sm"
+                    placeholder="Exmo Sr.(a)..."
+                  />
+                </div>
                 <div>
-                  <label className="label-corp">Moeda Base</label>
+                  <label className="label-corp">Moeda</label>
                   <select 
                     value={moeda} 
                     onChange={(e) => setMoeda(e.target.value)}
-                    className="input-modern font-semibold"
+                    className="input-modern font-semibold !py-2.5 !px-3 text-xs"
                   >
-                    <option value="USD">USD - Dólar Americano</option>
-                    <option value="MZN">MZN - Metical Moçambicano</option>
-                    <option value="EUR">EUR - Euro</option>
+                    <option value="USD">USD</option>
+                    <option value="MZN">MZN</option>
+                    <option value="EUR">EUR</option>
                   </select>
                 </div>
                 <div>
-                  <label className="label-corp">Taxa de Processamento (%)</label>
+                  <label className="label-corp">Taxa Proc. %</label>
                   <input 
                     type="number" 
                     value={taxaProcessamento || ''} 
                     onChange={(e) => setTaxaProcessamento(Number(e.target.value))}
-                    className="input-modern" 
-                    placeholder="0.00" 
+                    className="input-modern !py-2.5 !px-3 text-xs" 
                   />
                 </div>
                 <div>
-                  <label className="label-corp">Comissão Agenciamento (%)</label>
+                  <label className="label-corp">Comissão %</label>
                   <input 
                     type="number" 
                     value={comissaoServicos || ''} 
                     onChange={(e) => setComissaoServicos(Number(e.target.value))}
-                    className="input-modern" 
-                    placeholder="0.00" 
+                    className="input-modern !py-2.5 !px-3 text-xs" 
                   />
                 </div>
                 <div>
-                  <label className="label-corp">Taxa Armazém ({moeda})</label>
+                  <label className="label-corp">Armazém</label>
                   <input 
                     type="number" 
                     value={taxaLevantamento || ''} 
                     onChange={(e) => setTaxaLevantamento(Number(e.target.value))}
-                    className="input-modern" 
-                    placeholder="0.00" 
+                    className="input-modern !py-2.5 !px-3 text-xs" 
                   />
                 </div>
               </div>
             </section>
 
             {/* 2. Products */}
-            <section className="bento-item !p-10">
-              <div className="flex items-center justify-between mb-10">
+            <section className="bento-item !p-6 md:!p-8">
+              <div className="flex items-center justify-between mb-6">
                 <h3 className="font-heading font-semibold text-xs text-corp-blue uppercase tracking-[0.3em] flex items-center gap-3">
-                  <span className="w-8 h-8 rounded-lg bg-corp-blue/5 flex items-center justify-center text-[10px]">02</span>
+                  <span className="w-6 h-6 rounded-md bg-corp-blue/5 flex items-center justify-center text-[10px]">02</span>
                   Mercadorias
                 </h3>
                 <button 
                   onClick={adicionarProduto} 
-                  className="text-corp-blue bg-corp-blue/5 px-5 py-3 text-[10px] font-semibold uppercase tracking-widest hover:bg-corp-blue hover:text-white transition-all rounded-xl flex items-center gap-2"
+                  className="text-corp-blue bg-corp-blue/5 px-4 py-2 text-[10px] font-semibold uppercase tracking-widest hover:bg-corp-blue hover:text-white transition-all rounded-lg flex items-center gap-2"
                 >
-                  <Plus size={14} /> Adicionar Item
+                  <Plus size={14} /> Add Item
                 </button>
               </div>
               
-              <div className="space-y-8">
+              <div className="space-y-6">
                 {produtos.map((p, index) => (
                   <motion.div 
                     key={p.id}
                     initial={{ opacity: 0, scale: 0.95 }}
                     animate={{ opacity: 1, scale: 1 }}
-                    className="p-8 border border-slate-100 bg-slate-50/50 rounded-2xl relative group"
+                    className="p-4 md:p-6 border border-slate-100 bg-slate-50/50 rounded-xl relative group"
                   >
                     <button 
                       onClick={() => removerProduto(p.id)} 
-                      className="absolute top-6 right-6 text-slate-300 hover:text-red-500 transition-colors"
+                      className="absolute top-4 right-4 text-slate-300 hover:text-red-500 transition-colors"
                     >
-                      <Trash2 size={18} />
+                      <Trash2 size={16} />
                     </button>
                     
-                    <div className="grid grid-cols-1 md:grid-cols-12 gap-8 mb-8">
-                      <div className="md:col-span-6">
+                    <div className="grid grid-cols-2 md:grid-cols-12 gap-4 md:gap-3 mb-6">
+                      <div className="col-span-2 md:col-span-4">
                         <label className="label-corp">Descrição</label>
                         <input 
                           type="text" 
                           value={p.descricao} 
                           onChange={(e) => atualizarProduto(p.id, 'descricao', e.target.value)}
-                          className="input-modern" 
-                          placeholder="Ex: Peças Industriais" 
+                          className="input-modern !py-2.5 !px-3 text-xs" 
+                          placeholder="Ex: Peças" 
                         />
                       </div>
-                      <div className="md:col-span-3">
-                        <label className="label-corp">Valor ({moeda})</label>
+                      <div className="col-span-1 md:col-span-2">
+                        <label className="label-corp">Valor</label>
                         <input 
                           type="number" 
                           value={p.valorUnitario || ''} 
                           onChange={(e) => atualizarProduto(p.id, 'valorUnitario', Number(e.target.value))}
-                          className="input-modern" 
+                          className="input-modern !py-2.5 !px-3 text-xs" 
                         />
                       </div>
-                      <div className="md:col-span-3">
+                      <div className="col-span-1 md:col-span-2">
                         <label className="label-corp">Qtd.</label>
                         <input 
                           type="number" 
                           value={p.quantidade} 
                           onChange={(e) => atualizarProduto(p.id, 'quantidade', Number(e.target.value))}
-                          className="input-modern" 
+                          className="input-modern !py-2.5 !px-3 text-xs" 
                         />
                       </div>
-                    </div>
-
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
-                      <div>
-                        <label className="label-corp">Frete Fornecedor ({moeda})</label>
+                      <div className="col-span-1 md:col-span-2">
+                        <label className="label-corp">Frete F.</label>
                         <input 
                           type="number" 
                           value={p.taxaEnvioFornecedor || ''} 
                           onChange={(e) => atualizarProduto(p.id, 'taxaEnvioFornecedor', Number(e.target.value))}
-                          className="input-modern" 
+                          className="input-modern !py-2.5 !px-3 text-xs" 
                         />
                       </div>
-                      <div>
-                        <label className="label-corp">Peso Unit. (kg)</label>
+                      <div className="col-span-1 md:col-span-2">
+                        <label className="label-corp">Peso</label>
                         <input 
                           type="number" 
                           value={p.pesoUnitario || ''} 
                           onChange={(e) => atualizarProduto(p.id, 'pesoUnitario', Number(e.target.value))}
-                          className="input-modern" 
+                          className="input-modern !py-2.5 !px-3 text-xs" 
                         />
                       </div>
                     </div>
 
-                    <div className="bg-white p-6 rounded-xl border border-slate-100">
-                      <label className="label-corp !text-corp-blue-light mb-4">Dimensões Unidade (cm)</label>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-                        <input 
-                          type="number" 
-                          value={p.comprimento || ''} 
-                          onChange={(e) => atualizarProduto(p.id, 'comprimento', Number(e.target.value))}
-                          className="input-modern !bg-slate-50" 
-                          placeholder="C" 
-                        />
-                        <input 
-                          type="number" 
-                          value={p.largura || ''} 
-                          onChange={(e) => atualizarProduto(p.id, 'largura', Number(e.target.value))}
-                          className="input-modern !bg-slate-50" 
-                          placeholder="L" 
-                        />
-                        <input 
-                          type="number" 
-                          value={p.altura || ''} 
-                          onChange={(e) => atualizarProduto(p.id, 'altura', Number(e.target.value))}
-                          className="input-modern !bg-slate-50" 
-                          placeholder="A" 
-                        />
+                    <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm mb-4">
+                      <label className="label-corp !text-corp-blue-light mb-2">URL da Imagem</label>
+                      <input 
+                        type="url" 
+                        value={p.imageUrl || ''} 
+                        onChange={(e) => atualizarProduto(p.id, 'imageUrl', e.target.value)}
+                        className="input-modern !bg-slate-50 !py-2.5 !px-3 text-xs w-full" 
+                        placeholder="https://exemplo.com/imagem.jpg" 
+                      />
+                    </div>
+                    
+                    <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
+                      <div className="flex flex-col md:flex-row md:items-center gap-4">
+                        <label className="label-corp !text-corp-blue-light !mb-0 shrink-0">Dimensões (cm)</label>
+                        <div className="grid grid-cols-3 gap-3 flex-1">
+                          <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[8px] font-bold text-slate-300 uppercase">C</span>
+                            <input 
+                              type="number" 
+                              value={p.comprimento || ''} 
+                              onChange={(e) => atualizarProduto(p.id, 'comprimento', Number(e.target.value))}
+                              className="input-modern !bg-slate-50 !py-2.5 !pl-6 !pr-2 text-xs" 
+                            />
+                          </div>
+                          <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[8px] font-bold text-slate-300 uppercase">L</span>
+                            <input 
+                              type="number" 
+                              value={p.largura || ''} 
+                              onChange={(e) => atualizarProduto(p.id, 'largura', Number(e.target.value))}
+                              className="input-modern !bg-slate-50 !py-2.5 !pl-6 !pr-2 text-xs" 
+                            />
+                          </div>
+                          <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[8px] font-bold text-slate-300 uppercase">A</span>
+                            <input 
+                              type="number" 
+                              value={p.altura || ''} 
+                              onChange={(e) => atualizarProduto(p.id, 'altura', Number(e.target.value))}
+                              className="input-modern !bg-slate-50 !py-2.5 !pl-6 !pr-2 text-xs" 
+                            />
+                          </div>
+                        </div>
                       </div>
                     </div>
                   </motion.div>
@@ -647,51 +1118,48 @@ export default function App() {
             </section>
 
             {/* 3. Logistics */}
-            <section className="bento-item !p-10">
-              <h3 className="font-heading font-semibold text-xs text-corp-blue mb-10 uppercase tracking-[0.3em] flex items-center gap-3">
-                <span className="w-8 h-8 rounded-lg bg-corp-blue/5 flex items-center justify-center text-[10px]">03</span>
-                Logística & Aduana
+            <section className="bento-item !p-6 md:!p-8">
+              <h3 className="font-heading font-semibold text-xs text-corp-blue mb-6 uppercase tracking-[0.3em] flex items-center gap-3">
+                <span className="w-6 h-6 rounded-md bg-corp-blue/5 flex items-center justify-center text-[10px]">03</span>
+                Aduaneiro
               </h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-6">
                 <div>
-                  <label className="label-corp">Modal Logístico</label>
+                  <label className="label-corp">Modal</label>
                   <select 
                     value={tipoTransporte} 
                     onChange={(e) => setTipoTransporte(e.target.value)}
-                    className="input-modern font-semibold"
+                    className="input-modern font-semibold !py-2.5 !px-3 text-xs"
                   >
-                    <option value="maritimo">Marítimo (CBM - m³)</option>
-                    <option value="aereo">Aéreo (Peso - Kg)</option>
+                    <option value="maritimo">Marítimo</option>
+                    <option value="aereo">Aéreo</option>
                   </select>
                 </div>
                 <div>
-                  <label className="label-corp">Despacho Aduaneiro (por {tipoTransporte === 'maritimo' ? 'CBM' : 'Kg'})</label>
+                  <label className="label-corp">Despacho</label>
                   <input 
                     type="number" 
                     value={taxasAduaneiras || ''} 
                     onChange={(e) => setTaxasAduaneiras(Number(e.target.value))}
-                    className="input-modern" 
-                    placeholder="0.00" 
+                    className="input-modern !py-2.5 !px-3 text-xs" 
                   />
                 </div>
                 <div>
-                  <label className="label-corp">Frete Internacional (por {tipoTransporte === 'maritimo' ? 'CBM' : 'Kg'})</label>
+                  <label className="label-corp">Frete Int.</label>
                   <input 
                     type="number" 
                     value={freteInternacional || ''} 
                     onChange={(e) => setFreteInternacional(Number(e.target.value))}
-                    className="input-modern" 
-                    placeholder="0.00" 
+                    className="input-modern !py-2.5 !px-3 text-xs" 
                   />
                 </div>
                 <div>
-                  <label className="label-corp">Transporte Interno (Inland)</label>
+                  <label className="label-corp">Inland</label>
                   <input 
                     type="number" 
                     value={taxaEnvioLocal || ''} 
                     onChange={(e) => setTaxaEnvioLocal(Number(e.target.value))}
-                    className="input-modern" 
-                    placeholder="0.00" 
+                    className="input-modern !py-2.5 !px-3 text-xs" 
                   />
                 </div>
               </div>
@@ -699,14 +1167,14 @@ export default function App() {
           </div>
 
           {/* Results Column */}
-          <div className="space-y-8">
-            <div className="glass-card !bg-corp-blue !border-none p-10 text-white rounded-3xl sticky top-28">
-              <span className="text-[10px] font-semibold uppercase tracking-[0.4em] text-white/50 mb-10 block">Resultado da Proforma</span>
+          <div className="space-y-6">
+            <div className="glass-card !bg-corp-blue !border-none p-8 text-white rounded-2xl sticky top-24">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.4em] text-white/50 mb-6 block">Resultado</span>
               
-              <div className="space-y-10">
+              <div className="space-y-8">
                 <div>
-                  <span className="block text-[10px] text-white/40 mb-4 uppercase tracking-widest font-semibold">Investimento Total</span>
-                  <div className="flex items-baseline gap-4 flex-wrap">
+                  <span className="block text-xs text-white/40 mb-2 uppercase tracking-widest font-semibold">Investimento Total</span>
+                  <div className="flex items-baseline gap-3 flex-wrap">
                     <span className="text-xl font-semibold text-corp-blue-light">{moeda}</span>
                     <span className="text-4xl md:text-6xl font-heading font-bold tracking-tighter break-all">
                       {formatoMoeda(results.total)}
@@ -714,29 +1182,43 @@ export default function App() {
                   </div>
                 </div>
                 
-                <div className="pt-10 border-t border-white/10 space-y-6">
-                  <div className="flex justify-between items-center text-[10px] font-semibold uppercase tracking-widest">
-                    <span className="text-white/40">Volume Total</span>
-                    <span className="text-corp-blue-light">{results.cbmTotal.toFixed(4)} m³</span>
+                <div className="pt-6 border-t border-white/10 space-y-4">
+                  <div className="flex justify-between items-center text-xs font-semibold uppercase tracking-widest">
+                    <span className="text-white/40">Volume Faturado</span>
+                    <span className="text-corp-blue-light">{results.cbmFaturado.toFixed(3)} m³</span>
                   </div>
-                  <div className="flex justify-between items-center text-[10px] font-semibold uppercase tracking-widest">
-                    <span className="text-white/40">Peso Bruto</span>
-                    <span className="text-corp-blue-light">{results.pesoTotal.toFixed(2)} kg</span>
+                  <div className="flex justify-between items-center text-xs font-semibold uppercase tracking-widest">
+                    <span className="text-white/40">Peso Faturado</span>
+                    <span className="text-corp-blue-light">{results.pesoFaturado.toFixed(1)} kg</span>
                   </div>
                 </div>
                 
-                <div className="pt-10 space-y-4">
+                <div className="pt-6 space-y-3">
+                  <button 
+                    onClick={handleSaveQuote}
+                    disabled={isSaving}
+                    className="w-full btn-modern-primary !bg-corp-orange !text-white !shadow-none hover:!bg-corp-orange/90 disabled:opacity-50 !py-3"
+                  >
+                    {isSaving ? <RotateCcw size={18} className="animate-spin" /> : <Save size={18} />} 
+                    Salvar
+                  </button>
                   <button 
                     onClick={imprimirFatura} 
-                    className="w-full btn-modern-primary !bg-white !text-corp-blue !shadow-none hover:!bg-slate-100"
+                    disabled={isGeneratingPdf}
+                    className="w-full btn-modern-primary !bg-white !text-corp-blue !shadow-none hover:!bg-slate-100 !py-3 disabled:opacity-50"
                   >
-                    <Printer size={20} /> Exportar PDF
+                    {isGeneratingPdf ? (
+                      <RotateCcw size={18} className="animate-spin" />
+                    ) : (
+                      <Printer size={18} />
+                    )} 
+                    {isGeneratingPdf ? 'Gerando...' : 'Exportar PDF'}
                   </button>
                   <button 
                     onClick={limparTudo} 
-                    className="w-full text-[10px] font-semibold uppercase tracking-[0.3em] text-white/30 hover:text-white transition-all text-center py-4 flex items-center justify-center gap-2"
+                    className="w-full text-[10px] font-semibold uppercase tracking-[0.3em] text-white/30 hover:text-white transition-all text-center py-2 flex items-center justify-center gap-2"
                   >
-                    <RotateCcw size={14} /> Resetar Simulador
+                    <RotateCcw size={12} /> Resetar
                   </button>
                 </div>
               </div>
@@ -797,8 +1279,8 @@ export default function App() {
       </main>
 
       {/* Footer */}
-      <footer className="bg-slate-900 text-white pt-16 pb-10 md:pt-32 md:pb-12 border-t border-white/5 no-print mt-auto">
-        <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 md:grid-cols-4 gap-12 md:gap-20">
+      <footer className="bg-slate-900 text-white pt-12 pb-8 md:pt-20 md:pb-10 border-t border-white/5 no-print mt-auto">
+        <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 md:grid-cols-4 gap-8 md:gap-12">
           <div className="col-span-1 md:col-span-1">
             <div className="mb-10">
               <img 
@@ -827,10 +1309,10 @@ export default function App() {
             <h4 className="font-heading font-bold mb-10 uppercase text-[10px] tracking-[0.4em] text-white/30">Contactos</h4>
             <ul className="space-y-4 text-sm text-slate-400">
               <li className="flex items-center gap-4 hover:text-white transition-colors cursor-pointer">
-                <Phone size={20} className="text-corp-blue-light" /> +258 82 692 1467
+                <Phone size={20} className="text-corp-blue-light" /> +258 84 291 4655
               </li>
               <li className="flex items-center gap-4 hover:text-white transition-colors cursor-pointer">
-                <Phone size={20} className="text-corp-blue-light" /> +258 84 291 4655
+                <Phone size={20} className="text-corp-blue-light" /> +258 82 692 1467
               </li>
               <li className="pt-6">
                 <a href="mailto:primewayinvestelogistica@gmail.com" className="text-corp-blue-light hover:text-white transition-all flex items-center gap-3">
@@ -841,19 +1323,133 @@ export default function App() {
           </div>
 
           <div>
-            <h4 className="font-heading font-bold mb-10 uppercase text-[10px] tracking-[0.4em] text-white/30">Legal</h4>
+            <h4 className="font-heading font-bold mb-10 uppercase text-[10px] tracking-[0.4em] text-white/30">Legal & Ferramentas</h4>
             <ul className="space-y-4 text-sm text-slate-400">
               <li><button onClick={() => setShowLegal(legalTerms.termos)} className="hover:text-white transition-colors text-left">Termos de Serviço</button></li>
               <li><button onClick={() => setShowLegal(legalTerms.privacidade)} className="hover:text-white transition-colors text-left">Política de Privacidade</button></li>
               <li><button onClick={() => setShowLegal(legalTerms.compliance)} className="hover:text-white transition-colors text-left">Compliance Aduaneiro</button></li>
+              <li>
+                <a 
+                  href="https://www.at.gov.mz/por/Alfandeagas/Pauta-Aduaneira" 
+                  target="_blank" 
+                  rel="noopener noreferrer" 
+                  className="hover:text-white transition-colors text-left flex items-center gap-2"
+                >
+                  Pauta Aduaneira (AT)
+                </a>
+              </li>
+              <li>
+                <button 
+                  onClick={() => setShowFraudCheck(true)}
+                  className="hover:text-white transition-colors text-left flex items-center gap-2 text-corp-orange"
+                >
+                  Verificação de Fornecedores
+                </button>
+              </li>
             </ul>
           </div>
         </div>
-        <div className="max-w-7xl mx-auto px-6 mt-16 md:mt-32 pt-10 border-t border-white/5 flex flex-col md:flex-row justify-between items-center text-[10px] text-white/20 uppercase tracking-[0.4em] font-bold">
+        <div className="max-w-7xl mx-auto px-6 mt-12 md:mt-20 pt-8 border-t border-white/5 flex flex-col md:flex-row justify-between items-center text-[10px] text-white/20 uppercase tracking-[0.4em] font-bold">
           <p>&copy; 2024 PrimeWay Invest & Logística, SU, Lda. Todos os direitos reservados.</p>
           <p className="mt-6 md:mt-0">Global Logistics Infrastructure.</p>
         </div>
       </footer>
+
+      {/* History Modal */}
+      <AnimatePresence>
+        {showHistory && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/80 backdrop-blur-sm no-print"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              className="bg-white rounded-3xl p-10 max-w-4xl w-full shadow-2xl relative max-h-[80vh] flex flex-col"
+            >
+              <button 
+                onClick={() => setShowHistory(false)}
+                className="absolute top-6 right-6 text-slate-400 hover:text-corp-blue transition-colors"
+              >
+                <X size={24} />
+              </button>
+              <h3 className="font-heading font-bold text-3xl text-slate-900 uppercase tracking-tighter mb-8 flex items-center gap-4">
+                <History className="text-corp-blue" /> Histórico de Cotações
+              </h3>
+              
+              <div className="flex-1 overflow-y-auto space-y-4 pr-2">
+                {savedQuotes.length === 0 ? (
+                  <div className="text-center py-20 text-slate-400">
+                    <Package size={48} className="mx-auto mb-4 opacity-20" />
+                    <p>Nenhuma cotação salva encontrada.</p>
+                  </div>
+                ) : (
+                  savedQuotes.map((quote) => (
+                    <div key={quote.id} className="p-6 border border-slate-100 rounded-2xl hover:bg-slate-50 transition-colors group">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <div className="flex items-center gap-3 mb-2">
+                            <span className={`text-[8px] font-bold uppercase tracking-widest px-2 py-1 rounded-full ${quote.tipoTransporte === 'maritimo' ? 'bg-blue-50 text-blue-600' : 'bg-purple-50 text-purple-600'}`}>
+                              {quote.tipoTransporte}
+                            </span>
+                            <span className="text-[10px] text-slate-400 font-mono">
+                              {quote.createdAt?.toDate().toLocaleString('pt-BR')}
+                            </span>
+                          </div>
+                          <h4 className="font-bold text-slate-900">
+                            {quote.produtos?.length || 0} Itens • {quote.moeda} {formatoMoeda(quote.total)}
+                          </h4>
+                          <p className="text-xs text-slate-500 mt-1">
+                            {quote.produtos?.map((p: any) => p.descricao).join(', ').slice(0, 100)}...
+                          </p>
+                        </div>
+                        <button 
+                          onClick={() => {
+                            setNomeCliente(quote.nomeCliente || '');
+                            setMoeda(quote.moeda);
+                            setTipoTransporte(quote.tipoTransporte);
+                            setTaxaProcessamento(quote.taxaProcessamento || 0);
+                            setComissaoServicos(quote.comissaoServicos || 0);
+                            setTaxaLevantamento(quote.taxaLevantamento || 0);
+                            setTaxasAduaneiras(quote.taxasAduaneiras || 0);
+                            setFreteInternacional(quote.freteInternacional || 0);
+                            setTaxaEnvioLocal(quote.taxaEnvioLocal || 0);
+                            setCalcularRevenda(quote.calcularRevenda || false);
+                            setMargemLucro(quote.margemLucro || 0);
+                            setCustosAdicionais(quote.custosAdicionais || 0);
+                            
+                            if (quote.produtos && quote.produtos.length > 0) {
+                              setProdutos(quote.produtos.map((p: any, index: number) => ({
+                                id: Date.now() + index,
+                                descricao: p.descricao || '',
+                                imageUrl: p.imageUrl || '',
+                                valorUnitario: p.valorUnitario || 0,
+                                taxaEnvioFornecedor: p.taxaEnvioFornecedor || 0,
+                                quantidade: p.quantidade || 1,
+                                comprimento: p.comprimento || 0,
+                                largura: p.largura || 0,
+                                altura: p.altura || 0,
+                                pesoUnitario: p.pesoUnitario || 0
+                              })));
+                            }
+                            
+                            setShowHistory(false);
+                          }}
+                          className="opacity-0 group-hover:opacity-100 transition-opacity btn-modern-primary !py-2 !px-4 !text-[10px]"
+                        >
+                          Carregar
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Legal Modal */}
       <AnimatePresence>
@@ -892,75 +1488,332 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      {/* Fraud Check Modal */}
+      <AnimatePresence>
+        {showFraudCheck && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[100] flex items-center justify-center p-6 bg-slate-900/80 backdrop-blur-sm no-print"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              className="bg-white rounded-3xl p-10 max-w-2xl w-full shadow-2xl relative max-h-[90vh] overflow-y-auto"
+            >
+              <button 
+                onClick={() => {
+                  setShowFraudCheck(false);
+                  limparVerificacao();
+                }}
+                className="absolute top-6 right-6 text-slate-400 hover:text-corp-blue transition-colors"
+              >
+                <X size={24} />
+              </button>
+              <h3 className="font-heading font-black text-3xl text-slate-900 uppercase tracking-tighter mb-2 flex items-center gap-3">
+                <ShieldAlert className="text-corp-orange" size={32} /> Verificação de Fornecedores
+              </h3>
+              <p className="text-sm text-slate-500 mb-8">
+                Analise o risco de fraude antes de fechar negócio com um novo fornecedor internacional.
+              </p>
+
+              <div className="space-y-6">
+                <div>
+                  <label className="label-corp">Nome da Empresa</label>
+                  <input 
+                    type="text" 
+                    value={fraudData.empresa}
+                    onChange={(e) => setFraudData({...fraudData, empresa: e.target.value})}
+                    className="input-modern" 
+                    placeholder="Ex: Shenzhen Tech Co., Ltd." 
+                  />
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="label-corp">Website</label>
+                    <input 
+                      type="text" 
+                      value={fraudData.website}
+                      onChange={(e) => setFraudData({...fraudData, website: e.target.value})}
+                      className="input-modern" 
+                      placeholder="https://www.exemplo.com" 
+                    />
+                  </div>
+                  <div>
+                    <label className="label-corp">Email de Contato</label>
+                    <input 
+                      type="email" 
+                      value={fraudData.email}
+                      onChange={(e) => setFraudData({...fraudData, email: e.target.value})}
+                      className="input-modern" 
+                      placeholder="vendas@exemplo.com" 
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="label-corp">Método de Pagamento Solicitado</label>
+                    <select 
+                      value={fraudData.metodoPagamento}
+                      onChange={(e) => setFraudData({...fraudData, metodoPagamento: e.target.value})}
+                      className="input-modern"
+                    >
+                      <option value="banco_empresa">Transferência Bancária (Conta da Empresa)</option>
+                      <option value="paypal">PayPal / Plataforma Segura</option>
+                      <option value="banco_pessoal">Transferência Bancária (Conta Pessoal)</option>
+                      <option value="western_union">Western Union / MoneyGram</option>
+                      <option value="cripto">Criptomoedas (USDT, Bitcoin)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label-corp">Tempo de Mercado</label>
+                    <select 
+                      value={fraudData.tempoMercado}
+                      onChange={(e) => setFraudData({...fraudData, tempoMercado: e.target.value})}
+                      className="input-modern"
+                    >
+                      <option value="mais_5">Mais de 5 anos</option>
+                      <option value="1_a_5">1 a 5 anos</option>
+                      <option value="menos_1">Menos de 1 ano</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="pt-6 border-t border-slate-100">
+                  <h4 className="font-bold text-slate-900 mb-4 text-sm uppercase tracking-widest">Indicadores B2B (Ex: Alibaba, Made-in-China)</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div>
+                      <label className="label-corp">Selo de Fornecedor Verificado?</label>
+                      <select 
+                        value={fraudData.alibabaVerified}
+                        onChange={(e) => setFraudData({...fraudData, alibabaVerified: e.target.value})}
+                        className="input-modern"
+                      >
+                        <option value="nao_aplica">Não se aplica / Fora de plataforma</option>
+                        <option value="sim">Sim (Verified Supplier)</option>
+                        <option value="nao">Não possui selo de verificação</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="label-corp">Aceita Trade Assurance (Garantia)?</label>
+                      <select 
+                        value={fraudData.tradeAssurance}
+                        onChange={(e) => setFraudData({...fraudData, tradeAssurance: e.target.value})}
+                        className="input-modern"
+                      >
+                        <option value="sim">Sim, aceita pagamento pela plataforma</option>
+                        <option value="nao">Não, exige pagamento por fora</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="label-corp">Preço vs. Média do Mercado</label>
+                      <select 
+                        value={fraudData.priceComparison}
+                        onChange={(e) => setFraudData({...fraudData, priceComparison: e.target.value})}
+                        className="input-modern"
+                      >
+                        <option value="normal">Preço normal / Dentro da média</option>
+                        <option value="muito_baixo">Muito abaixo do mercado (Suspeito)</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="label-corp">Disponibilidade de Amostras</label>
+                      <select 
+                        value={fraudData.amostras}
+                        onChange={(e) => setFraudData({...fraudData, amostras: e.target.value})}
+                        className="input-modern"
+                      >
+                        <option value="sim">Fornece amostras (pagas ou grátis)</option>
+                        <option value="nao">Recusa enviar amostras</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                <button 
+                  onClick={verificarFornecedor}
+                  className="btn-modern-primary w-full mt-4"
+                >
+                  Analisar Risco
+                </button>
+
+                {fraudResult && (
+                  <motion.div 
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className={`mt-8 p-6 rounded-2xl border ${
+                      fraudResult.level === 'Alto Risco' ? 'bg-red-50 border-red-200' :
+                      fraudResult.level === 'Risco Moderado' ? 'bg-yellow-50 border-yellow-200' :
+                      'bg-green-50 border-green-200'
+                    }`}
+                  >
+                    <div className="flex items-center gap-4 mb-4">
+                      {fraudResult.level === 'Alto Risco' ? <ShieldAlert className="text-red-500" size={32} /> :
+                       fraudResult.level === 'Risco Moderado' ? <AlertTriangle className="text-yellow-500" size={32} /> :
+                       <ShieldCheck className="text-green-500" size={32} />}
+                      <div>
+                        <h4 className={`font-bold text-lg ${
+                          fraudResult.level === 'Alto Risco' ? 'text-red-700' :
+                          fraudResult.level === 'Risco Moderado' ? 'text-yellow-700' :
+                          'text-green-700'
+                        }`}>
+                          {fraudResult.level}
+                        </h4>
+                        <p className="text-xs font-semibold uppercase tracking-widest opacity-70">
+                          Score de Risco: {fraudResult.score}/100
+                        </p>
+                      </div>
+                    </div>
+                    
+                    {fraudResult.messages.length > 0 ? (
+                      <ul className="space-y-2 mt-4">
+                        {fraudResult.messages.map((msg, idx) => (
+                          <li key={idx} className="flex items-start gap-2 text-sm text-slate-700">
+                            <span className="text-red-500 mt-0.5">•</span> {msg}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <p className="text-sm text-green-700 mt-4">
+                        Nenhum indicador crítico de fraude encontrado com base nos dados fornecidos. Ainda assim, recomendamos sempre solicitar amostras e verificar documentos oficiais.
+                      </p>
+                    )}
+                  </motion.div>
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* --- Print Area --- */}
-      <div id="invoice-print-area" className="hidden bg-white font-sans text-black">
-        <div className="p-16 max-w-5xl mx-auto border border-slate-200">
-          <div className="flex justify-between items-end border-b-4 border-corp-blue pb-10 mb-12">
-            <div>
-              <img 
-                src="https://files.manuscdn.com/user_upload_by_module/session_file/310419663028416962/glYQVTOtGErYGBoj.jpg" 
-                alt="PrimeWay Logo Print" 
-                className="h-16 w-auto object-contain mb-6"
-                referrerPolicy="no-referrer"
-              />
-              <p className="font-bold text-[10px] text-slate-500 uppercase tracking-[0.4em]">Invest & Logística, SU, Lda</p>
-              <p className="text-xs text-slate-400 mt-6">NUIT: 402119357 | Maputo, Moçambique</p>
+      <div id="invoice-print-area" className="hidden bg-[#ffffff] font-sans text-[#000000] fixed top-0 left-0 w-[1024px] z-[-50]">
+        <div className="p-12 max-w-5xl mx-auto">
+          {/* Header */}
+          <div className="flex justify-between items-start mb-8">
+            <div className="flex flex-col gap-6">
+              <div className="flex items-center gap-6">
+                <img 
+                  src={logoBase64} 
+                  alt="PrimeWay Logo" 
+                  className="w-40 h-auto object-contain shrink-0"
+                />
+                <div>
+                  <h1 className="text-3xl font-bold text-[#1A284F] mb-1">PrimeWay</h1>
+                  <p className="text-[#2D4C8C] italic text-sm mb-1">Excelência em cada importação</p>
+                  <p className="text-xs text-[#64748b]">NUIT: 402119357</p>
+                </div>
+              </div>
+              {nomeCliente && (
+                <div>
+                  <p className="text-sm font-semibold text-[#64748b] mb-1 uppercase tracking-wider">Atenção de:</p>
+                  <p className="text-xl font-bold text-[#0f172a]">Exmo(a) Sr(a). {nomeCliente}</p>
+                </div>
+              )}
             </div>
             <div className="text-right">
-              <h2 className="font-heading font-bold text-4xl uppercase tracking-widest mb-4 text-slate-900">Cotação</h2>
-              <p className="text-sm font-mono text-slate-500">Data: {new Date().toLocaleDateString('pt-BR')}</p>
-              <p className="text-sm font-mono text-slate-500">Ref: PW-{Date.now().toString().slice(-6)}</p>
+              <h2 className="font-heading font-bold text-2xl uppercase tracking-widest text-[#0f172a] mb-2">Fatura Proforma</h2>
+              <p className="text-sm font-semibold text-[#334155] mb-1">Data: {new Date().toLocaleDateString('pt-BR')}</p>
+              <p className="text-xs text-[#94a3b8]">REF: PW-{Date.now().toString().slice(-6)}</p>
             </div>
           </div>
 
-          <div className="grid grid-cols-4 gap-6 mb-10 border border-gray-200 p-6 bg-gray-50">
-            <div><p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Moeda</p><p className="text-sm font-bold">{moeda}</p></div>
-            <div><p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Modal</p><p className="text-sm font-bold uppercase">{tipoTransporte}</p></div>
-            <div><p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Volume Total</p><p className="text-sm font-bold">{results.cbmTotal.toFixed(4)} m³</p></div>
-            <div><p className="text-[10px] font-bold text-gray-500 uppercase tracking-widest mb-1">Peso Bruto</p><p className="text-sm font-bold">{results.pesoTotal.toFixed(2)} kg</p></div>
+          <div className="w-full h-1 bg-[#1A284F] mb-10"></div>
+
+          {/* Summary Cards */}
+          <div className="grid grid-cols-3 gap-6 mb-10">
+            <div className="bg-[#f8fafc] rounded-xl p-6 border border-[#f1f5f9]">
+              <p className="text-[10px] font-bold text-[#94a3b8] uppercase tracking-widest mb-2">Moeda Principal</p>
+              <p className="text-xl font-bold text-[#1e293b]">{moeda}</p>
+            </div>
+            <div className="bg-[#f8fafc] rounded-xl p-6 border border-[#f1f5f9]">
+              <p className="text-[10px] font-bold text-[#94a3b8] uppercase tracking-widest mb-2">Modalidade de Transporte</p>
+              <p className="text-xl font-bold text-[#1e293b] uppercase">{tipoTransporte}</p>
+            </div>
+            <div className="bg-[#f8fafc] rounded-xl p-6 border border-[#f1f5f9]">
+              <p className="text-[10px] font-bold text-[#94a3b8] uppercase tracking-widest mb-2">Volume & Peso Total</p>
+              <p className="text-xl font-bold text-[#1e293b]">{results.cbmFaturado.toFixed(4)} m³ / {results.pesoFaturado.toFixed(2)} kg</p>
+            </div>
           </div>
 
-          <table className="w-full text-left border-collapse mb-10 text-sm border border-gray-300">
+          {/* Table */}
+          <table className="w-full text-left border-collapse mb-12">
             <thead>
-              <tr className="bg-corp-blue text-white text-[10px] uppercase tracking-widest">
-                <th className="p-4 border border-gray-300">Descrição Comercial</th>
-                <th className="p-4 border border-gray-300 text-center">Qtd</th>
-                <th className="p-4 border border-gray-300 text-right">Valor Unit.</th>
-                <th className="p-4 border border-gray-300 text-right">Frete Interno</th>
-                <th className="p-4 border border-gray-300 text-right">Subtotal</th>
+              <tr className="bg-[#0f172a] text-[#ffffff] text-[10px] uppercase tracking-widest">
+                <th className="py-4 px-6 font-semibold">Descrição do Item</th>
+                <th className="py-4 px-6 font-semibold text-center">Visual</th>
+                <th className="py-4 px-6 font-semibold text-center">Qtd</th>
+                <th className="py-4 px-6 font-semibold text-right">Unitário</th>
+                <th className="py-4 px-6 font-semibold text-right">Envio Forn.</th>
+                <th className="py-4 px-6 font-semibold text-right">Total Linha</th>
               </tr>
             </thead>
-            <tbody className="text-gray-800 font-medium">
+            <tbody className="text-[#334155] text-sm">
               {produtos.map((p) => (
-                <tr key={p.id} className="border-b border-gray-300">
-                  <td className="p-4 border-r border-gray-300">{p.descricao || 'Mercadoria Geral'}</td>
-                  <td className="p-4 border-r border-gray-300 text-center">{p.quantidade}</td>
-                  <td className="p-4 border-r border-gray-300 text-right">{formatoMoeda(p.valorUnitario)}</td>
-                  <td className="p-4 border-r border-gray-300 text-right">{formatoMoeda(p.taxaEnvioFornecedor)}</td>
-                  <td className="p-4 text-right font-bold">{formatoMoeda((p.valorUnitario * p.quantidade) + p.taxaEnvioFornecedor)}</td>
+                <tr key={p.id} className="border-b border-[#f1f5f9]">
+                  <td className="py-6 px-6 font-semibold text-[#0f172a]">{p.descricao || 'Mercadoria Geral'}</td>
+                  <td className="py-6 px-6 text-center">
+                    {p.imageUrl ? (
+                      <div className="w-16 h-16 rounded-md mx-auto overflow-hidden bg-white border border-[#f1f5f9] flex items-center justify-center">
+                        <img 
+                          src={p.imageUrl} 
+                          alt={p.descricao || 'Produto'} 
+                          className="w-full h-full object-contain"
+                          referrerPolicy="no-referrer"
+                        />
+                      </div>
+                    ) : (
+                      <div className="w-12 h-12 bg-[#f1f5f9] rounded-md mx-auto flex items-center justify-center text-[#cbd5e1]">
+                        <Package size={20} />
+                      </div>
+                    )}
+                  </td>
+                  <td className="py-6 px-6 text-center">{p.quantidade}</td>
+                  <td className="py-6 px-6 text-right">{formatoMoeda(p.valorUnitario)}</td>
+                  <td className="py-6 px-6 text-right">{formatoMoeda(p.taxaEnvioFornecedor)}</td>
+                  <td className="py-6 px-6 text-right font-bold text-[#1A284F]">
+                    {formatoMoeda((p.valorUnitario * p.quantidade) + p.taxaEnvioFornecedor)}
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
 
+          {/* Totals */}
           <div className="flex justify-end mb-16">
-            <div className="w-full max-w-sm border border-gray-300 p-6">
-              <div className="space-y-3 mb-6 text-xs text-gray-600">
-                <div className="flex justify-between border-b border-gray-100 pb-2"><span>Mercadoria (FOB/EXW):</span><span className="font-bold text-black">{moeda} {formatoMoeda(results.subtotalProdutos)}</span></div>
-                <div className="flex justify-between border-b border-gray-100 pb-2"><span>Taxas / Agenciamento:</span><span className="font-bold text-black">{moeda} {formatoMoeda(results.valorTaxaProc + results.valorComissao)}</span></div>
-                <div className="flex justify-between border-b border-gray-100 pb-2"><span>Despesas Armazém:</span><span className="font-bold text-black">{moeda} {formatoMoeda(results.taxaLevantamento)}</span></div>
-                <div className="flex justify-between pb-2"><span>Logística & Aduana:</span><span className="font-bold text-black">{moeda} {formatoMoeda(results.custosEnvio)}</span></div>
+            <div className="w-full max-w-md">
+              <div className="space-y-4 mb-6 text-sm text-[#475569]">
+                <div className="flex justify-between">
+                  <span>Subtotal de Mercadorias:</span>
+                  <span className="font-bold text-[#0f172a]">{moeda} {formatoMoeda(results.subtotalProdutos)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Taxas de Serviço (Proc/Com):</span>
+                  <span className="font-bold text-[#0f172a]">{moeda} {formatoMoeda(results.valorTaxaProc + results.valorComissao)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Taxa de Levantamento:</span>
+                  <span className="font-bold text-[#0f172a]">{moeda} {formatoMoeda(results.taxaLevantamento)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Logística & Aduana (Est.):</span>
+                  <span className="font-bold text-[#0f172a]">{moeda} {formatoMoeda(results.custosEnvio)}</span>
+                </div>
               </div>
-              <div className="flex justify-between items-end bg-gray-100 p-4 border-t-2 border-black">
-                <span className="font-bold uppercase tracking-widest text-[10px]">Custo Operacional Total</span>
+              <div className="bg-[#1A284F] text-[#ffffff] p-6 rounded-xl flex justify-between items-center">
+                <span className="font-bold uppercase tracking-widest text-xs">Total Estimado</span>
                 <span className="text-2xl font-black">{moeda} {formatoMoeda(results.total)}</span>
               </div>
             </div>
           </div>
           
-          <div className="text-center text-[10px] text-gray-500 border-t border-gray-300 pt-6">
+          {/* Footer */}
+          <div className="text-center text-[10px] text-[#94a3b8] border-t border-[#f1f5f9] pt-8">
             <p>Estimativa gerada em sistema. Sujeita a alterações mediante aferição de peso/cubagem na origem e variações cambiais.</p>
-            <p className="font-bold text-gray-800 mt-2">PRIMEWAY INVEST & LOGÍSTICA - +258 82 692 1467 | primewayinvestelogistica@gmail.com</p>
+            <p className="font-bold text-[#475569] mt-2">PRIMEWAY INVEST & LOGÍSTICA - +258 84 291 4655 | primewayinvestelogistica@gmail.com</p>
           </div>
         </div>
       </div>
