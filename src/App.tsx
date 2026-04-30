@@ -167,6 +167,7 @@ interface Product {
   id: number;
   descricao: string;
   imageUrl?: string;
+  categoriaAerea?: string;
   valorUnitario: number;
   taxaEnvioFornecedor: number;
   quantidade: number;
@@ -221,6 +222,7 @@ function AppContent() {
   const [isSaving, setIsSaving] = useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [moeda, setMoeda] = useState('USD');
+  const [taxaCambio, setTaxaCambio] = useState(64);
   const [nomeCliente, setNomeCliente] = useState('');
   const [taxaProcessamento, setTaxaProcessamento] = useState(0);
   const [comissaoServicos, setComissaoServicos] = useState(0);
@@ -325,6 +327,7 @@ function AppContent() {
       await addDoc(collection(db, path), {
         userId: user.uid,
         moeda,
+        taxaCambio,
         nomeCliente,
         total: results.total,
         tipoTransporte,
@@ -340,6 +343,7 @@ function AppContent() {
         produtos: produtos.map(p => ({
           descricao: p.descricao,
           imageUrl: p.imageUrl || '',
+          categoriaAerea: p.categoriaAerea || 'normal',
           valorUnitario: p.valorUnitario,
           quantidade: p.quantidade,
           taxaEnvioFornecedor: p.taxaEnvioFornecedor,
@@ -405,8 +409,61 @@ function AppContent() {
     const cbmFaturado = cbmTotal > 0 ? Math.max(0.1, cbmTotal) : 0;
     const pesoFaturado = pesoTotal > 0 ? Math.max(0.5, pesoTotal) : 0;
     
-    const baseCalculoEnvio = tipoTransporte === 'maritimo' ? cbmFaturado : pesoFaturado;
-    const custosEnvio = (baseCalculoEnvio * Number(taxasAduaneiras)) + (baseCalculoEnvio * Number(freteInternacional)) + Number(taxaEnvioLocal);
+    let custosEnvio = 0;
+    
+    if (tipoTransporte === 'aereo') {
+      let custoAereoTotalMT = 0;
+      
+      produtos.forEach(p => {
+        const qtd = Number(p.quantidade) || 0;
+        const pesoKg = Number(p.pesoUnitario) || 0;
+        const comp = Number(p.comprimento) || 0;
+        const larg = Number(p.largura) || 0;
+        const alt = Number(p.altura) || 0;
+        // Volumetric weight: (L * W * H) / 6000
+        const volWeight = (comp * larg * alt) / 6000;
+        
+        const chargeableWeightUnit = Math.max(pesoKg, volWeight);
+        
+        let precoAereoUnitarioFaturado = 0;
+        switch (p.categoriaAerea) {
+          case 'normal':
+            precoAereoUnitarioFaturado = chargeableWeightUnit * 1600;
+            break;
+          case 'sensitive':
+            precoAereoUnitarioFaturado = chargeableWeightUnit * 2000;
+            break;
+          case 'watch_battery':
+            precoAereoUnitarioFaturado = 500;
+            break;
+          case 'mobile':
+            precoAereoUnitarioFaturado = 5000;
+            break;
+          case 'laptop':
+            precoAereoUnitarioFaturado = 6500;
+            break;
+          default:
+            precoAereoUnitarioFaturado = chargeableWeightUnit * 1600;
+            break;
+        }
+        
+        custoAereoTotalMT += precoAereoUnitarioFaturado * qtd;
+      });
+      
+      // Apply min charge limit of 0.5kg for normal goods equivalent (800 MT)
+      if (pesoFaturado < 0.5 && custoAereoTotalMT > 0 && custoAereoTotalMT < 800) {
+        custoAereoTotalMT = 800; // minimum charge
+      }
+      
+      const convertedCost = moeda === 'USD' || moeda === 'EUR' ? (custoAereoTotalMT / (Number(taxaCambio) || 1)) : custoAereoTotalMT;
+      custoAereoTotalMT = convertedCost;
+      
+      // If there are still taxasAduaneiras or freteInternacional added locally or explicitly, we can add them to respect legacy inputs, or just replace entirely. Standard is + taxaEnvioLocal.
+      custosEnvio = custoAereoTotalMT + Number(taxaEnvioLocal);
+    } else {
+      const baseCalculoEnvio = cbmFaturado;
+      custosEnvio = (baseCalculoEnvio * Number(taxasAduaneiras)) + (baseCalculoEnvio * Number(freteInternacional)) + Number(taxaEnvioLocal);
+    }
 
     let total = subtotalProdutos + valorTaxaProc + valorComissao + Number(taxaLevantamento) + custosEnvio;
 
@@ -426,7 +483,7 @@ function AppContent() {
       cbmFaturado,
       pesoFaturado
     };
-  }, [produtos, taxaProcessamento, comissaoServicos, taxaLevantamento, tipoTransporte, taxasAduaneiras, freteInternacional, taxaEnvioLocal, calcularRevenda, margemLucro, custosAdicionais]);
+  }, [produtos, taxaProcessamento, comissaoServicos, taxaLevantamento, tipoTransporte, taxasAduaneiras, freteInternacional, taxaEnvioLocal, calcularRevenda, margemLucro, custosAdicionais, moeda, taxaCambio]);
 
   // --- Handlers ---
 
@@ -436,6 +493,7 @@ function AppContent() {
       {
         id: Date.now(),
         descricao: '',
+        categoriaAerea: 'normal',
         valorUnitario: 0,
         taxaEnvioFornecedor: 0,
         quantidade: 1,
@@ -462,6 +520,7 @@ function AppContent() {
         id: Date.now(),
         descricao: '',
         imageUrl: '',
+        categoriaAerea: 'normal',
         valorUnitario: 0,
         taxaEnvioFornecedor: 0,
         quantidade: 1,
@@ -958,6 +1017,17 @@ function AppContent() {
                     <option value="EUR">EUR</option>
                   </select>
                 </div>
+                {(moeda === 'USD' || moeda === 'EUR') && (
+                  <div>
+                    <label className="label-corp">Taxa {moeda}/MZN</label>
+                    <input 
+                      type="number" 
+                      value={taxaCambio || ''} 
+                      onChange={(e) => setTaxaCambio(Number(e.target.value))}
+                      className="input-modern font-semibold !py-2.5 !px-3 text-xs" 
+                    />
+                  </div>
+                )}
                 <div>
                   <label className="label-corp">Taxa Proc. %</label>
                   <input 
@@ -1068,6 +1138,23 @@ function AppContent() {
                     </div>
 
                     <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm mb-4">
+                      {tipoTransporte === 'aereo' && (
+                        <div className="mb-4">
+                          <label className="label-corp !text-corp-blue-light mb-2">Categoria Aérea</label>
+                          <select 
+                            value={p.categoriaAerea || 'normal'}
+                            onChange={(e) => atualizarProduto(p.id, 'categoriaAerea', e.target.value)}
+                            className="input-modern !bg-slate-50 !py-2.5 !px-3 text-xs w-full"
+                          >
+                            <option value="normal">Normal Goods (Roupas, Sapatos, Acessórios) - 1600 MT/KG</option>
+                            <option value="sensitive">Sensitive Goods (Líquidos, Suplementos, Baterias) - 2000 MT/KG</option>
+                            <option value="watch_battery">Watch/Battery {"(<0.3KG)"} - 500 MT/UNIT</option>
+                            <option value="mobile">Mobile Phone - 5000 MT/UNIT</option>
+                            <option value="laptop">Laptop/Drone/Camera - 6500 MT/UNIT</option>
+                          </select>
+                        </div>
+                      )}
+                      
                       <label className="label-corp !text-corp-blue-light mb-2">URL da Imagem</label>
                       <input 
                         type="url" 
@@ -1135,24 +1222,28 @@ function AppContent() {
                     <option value="aereo">Aéreo</option>
                   </select>
                 </div>
-                <div>
-                  <label className="label-corp">Despacho</label>
-                  <input 
-                    type="number" 
-                    value={taxasAduaneiras || ''} 
-                    onChange={(e) => setTaxasAduaneiras(Number(e.target.value))}
-                    className="input-modern !py-2.5 !px-3 text-xs" 
-                  />
-                </div>
-                <div>
-                  <label className="label-corp">Frete Int.</label>
-                  <input 
-                    type="number" 
-                    value={freteInternacional || ''} 
-                    onChange={(e) => setFreteInternacional(Number(e.target.value))}
-                    className="input-modern !py-2.5 !px-3 text-xs" 
-                  />
-                </div>
+                {tipoTransporte === 'maritimo' && (
+                  <>
+                    <div>
+                      <label className="label-corp">Despacho</label>
+                      <input 
+                        type="number" 
+                        value={taxasAduaneiras || ''} 
+                        onChange={(e) => setTaxasAduaneiras(Number(e.target.value))}
+                        className="input-modern !py-2.5 !px-3 text-xs" 
+                      />
+                    </div>
+                    <div>
+                      <label className="label-corp">Frete Int.</label>
+                      <input 
+                        type="number" 
+                        value={freteInternacional || ''} 
+                        onChange={(e) => setFreteInternacional(Number(e.target.value))}
+                        className="input-modern !py-2.5 !px-3 text-xs" 
+                      />
+                    </div>
+                  </>
+                )}
                 <div>
                   <label className="label-corp">Inland</label>
                   <input 
@@ -1408,6 +1499,7 @@ function AppContent() {
                         <button 
                           onClick={() => {
                             setNomeCliente(quote.nomeCliente || '');
+                            setTaxaCambio(quote.taxaCambio || 64);
                             setMoeda(quote.moeda);
                             setTipoTransporte(quote.tipoTransporte);
                             setTaxaProcessamento(quote.taxaProcessamento || 0);
@@ -1425,6 +1517,7 @@ function AppContent() {
                                 id: Date.now() + index,
                                 descricao: p.descricao || '',
                                 imageUrl: p.imageUrl || '',
+                                categoriaAerea: p.categoriaAerea || 'normal',
                                 valorUnitario: p.valorUnitario || 0,
                                 taxaEnvioFornecedor: p.taxaEnvioFornecedor || 0,
                                 quantidade: p.quantidade || 1,
