@@ -24,7 +24,9 @@ import {
   User,
   ShieldAlert,
   Shield,
-  AlertTriangle
+  AlertTriangle,
+  Search,
+  Truck
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -43,7 +45,11 @@ import {
   orderBy, 
   Timestamp,
   doc,
-  getDocFromServer
+  getDocFromServer,
+  getDoc,
+  setDoc,
+  updateDoc,
+  arrayUnion
 } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import { toJpeg } from 'html-to-image';
@@ -203,10 +209,12 @@ export default function App() {
 function AppContent() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [user, setUser] = useState<FirebaseUser | null>(null);
+  const isAdmin = user?.email === 'fabitoliuia7@gmail.com';
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [savedQuotes, setSavedQuotes] = useState<any[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [showFraudCheck, setShowFraudCheck] = useState(false);
+  const [quoteRefCode] = useState(() => Math.floor(1000 + Math.random() * 9000).toString().padStart(4, '0'));
   const [fraudData, setFraudData] = useState({
     empresa: '',
     website: '',
@@ -234,6 +242,128 @@ function AppContent() {
   const [calcularRevenda, setCalcularRevenda] = useState(false);
   const [margemLucro, setMargemLucro] = useState(0);
   const [custosAdicionais, setCustosAdicionais] = useState(0);
+  
+  // Tracking State
+  const [trackingCode, setTrackingCode] = useState('');
+  const [trackingResult, setTrackingResult] = useState<null | { status: string, location: string, date: string, history: any[] }>(null);
+  const [isTracking, setIsTracking] = useState(false);
+  const [trackingError, setTrackingError] = useState('');
+  const [showAdminTracking, setShowAdminTracking] = useState(false);
+  const [adminTrackingCode, setAdminTrackingCode] = useState('');
+  const [adminTrackingStatus, setAdminTrackingStatus] = useState('');
+  const [adminTrackingLocation, setAdminTrackingLocation] = useState('');
+  const [adminTrackingDate, setAdminTrackingDate] = useState('');
+  const [isSavingTracking, setIsSavingTracking] = useState(false);
+
+  // Debit Note States
+  const [showDebitNoteModal, setShowDebitNoteModal] = useState(false);
+  const [isGeneratingDebit, setIsGeneratingDebit] = useState(false);
+  interface DebitItem {
+    id: string;
+    orderNumber: string;
+    cargoDescription: string;
+    pkgs: number | string;
+    actualAmount: number | string;
+    chargeableAmount: number | string;
+    unitPrice: number | string;
+    unitType: string;
+  }
+
+  const [debitNoteForm, setDebitNoteForm] = useState({
+    clientInfo: '',
+    operatorInfo: '',
+    idCode: '',
+    origin: 'China', // or South Africa
+    shipMode: 'AIR', // AIR or SEA
+    priceType: 'FREIGHT_AND_DUTY', // FREIGHT_ONLY, DUTY_ONLY, FREIGHT_AND_DUTY
+  });
+  const [debitItems, setDebitItems] = useState<DebitItem[]>([
+    {
+      id: Date.now().toString(),
+      orderNumber: '',
+      cargoDescription: '',
+      pkgs: 1,
+      actualAmount: '', // KG or CBM
+      chargeableAmount: '', // KG or CBM
+      unitPrice: '',
+      unitType: 'KG'
+    }
+  ]);
+
+  const saveTrackingUpdate = async () => {
+    if (!adminTrackingCode.trim() || !adminTrackingStatus.trim()) {
+      alert("Preencha o código e o status.");
+      return;
+    }
+    setIsSavingTracking(true);
+    try {
+      const code = adminTrackingCode.trim().toUpperCase();
+      const docRef = doc(db, 'tracking', code);
+      const docSnap = await getDoc(docRef);
+      
+      const newHistoryEvent = {
+        status: adminTrackingStatus,
+        location: adminTrackingLocation,
+        date: adminTrackingDate || new Date().toLocaleDateString('pt-BR'),
+        time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+      };
+
+      if (docSnap.exists()) {
+        await updateDoc(docRef, {
+          status: adminTrackingStatus,
+          location: adminTrackingLocation,
+          date: adminTrackingDate || new Date().toLocaleDateString('pt-BR'),
+          history: arrayUnion(newHistoryEvent)
+        });
+      } else {
+        await setDoc(docRef, {
+          status: adminTrackingStatus,
+          location: adminTrackingLocation,
+          date: adminTrackingDate || new Date().toLocaleDateString('pt-BR'),
+          history: [newHistoryEvent]
+        });
+      }
+      alert("Rastreamento atualizado com sucesso!");
+      setShowAdminTracking(false);
+      setAdminTrackingCode('');
+      setAdminTrackingLocation('');
+      setAdminTrackingStatus('');
+    } catch (e: any) {
+      console.error(e);
+      alert("Erro: " + e.message + " (Pode ser falta de permissões de admin)");
+    } finally {
+      setIsSavingTracking(false);
+    }
+  };
+
+  const handleTrack = async () => {
+    if (!trackingCode.trim()) return;
+    setIsTracking(true);
+    setTrackingResult(null);
+    setTrackingError('');
+    
+    try {
+      const docRef = doc(db, 'tracking', trackingCode.trim().toUpperCase());
+      const docSnap = await getDoc(docRef);
+      
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setTrackingResult({
+          status: data.status,
+          location: data.location,
+          date: data.date,
+          history: data.history || []
+        });
+      } else {
+        setTrackingError('Cargo com este código não encontrado.');
+      }
+    } catch (error) {
+      console.error("Erro ao buscar rastreamento:", error);
+      setTrackingError('Ocorreu um erro ao buscar o rastreamento.');
+    } finally {
+      setIsTracking(false);
+    }
+  };
   
   const [produtos, setProdutos] = useState<Product[]>([
     {
@@ -614,6 +744,43 @@ function AppContent() {
     setFraudResult(null);
   };
 
+  const gerarDebitNotePDF = async () => {
+    const element = document.getElementById('debit-note-print-area');
+    if (!element) {
+      alert("Erro interno: A área de impressão não foi encontrada.");
+      return;
+    }
+
+    try {
+      setIsGeneratingDebit(true);
+      element.classList.remove('hidden', 'pointer-events-none');
+      element.style.display = 'block';
+
+      await new Promise(resolve => setTimeout(resolve, 100));
+
+      const dataUrl = await toJpeg(element, { quality: 0.98, backgroundColor: '#ffffff', pixelRatio: 2 });
+      
+      const pdf = new jsPDF({
+        orientation: 'landscape',
+        unit: 'px',
+        format: 'a5'
+      });
+
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = (element.offsetHeight * pdfWidth) / element.offsetWidth;
+
+      pdf.addImage(dataUrl, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+      pdf.save(`Debit_Note_${debitNoteForm.idCode || 'Nova'}.pdf`);
+    } catch (error) {
+      console.error("Erro ao gerar PDF:", error);
+      alert("Ocorreu um erro ao gerar a nota de débito.");
+    } finally {
+      element.classList.add('hidden', 'pointer-events-none');
+      element.style.display = '';
+      setIsGeneratingDebit(false);
+    }
+  };
+
   const imprimirFatura = async () => {
     const element = document.getElementById('invoice-print-area');
     if (!element) {
@@ -698,7 +865,7 @@ function AppContent() {
           </a>
           
           <div className="hidden md:flex items-center gap-10">
-            {['Início', 'A Empresa', 'Serviços'].map((item) => (
+            {['Início', 'A Empresa', 'Serviços', 'Rastreio'].map((item) => (
               <a 
                 key={item} 
                 href={`#${item.toLowerCase().replace(' ', '-')}`} 
@@ -759,7 +926,7 @@ function AppContent() {
               exit={{ opacity: 0, y: -20 }}
               className="absolute top-full left-0 w-full bg-white border-b border-gray-200 p-6 flex flex-col gap-4 md:hidden shadow-xl"
             >
-              {['Início', 'A Empresa', 'Serviços'].map((item) => (
+              {['Início', 'A Empresa', 'Serviços', 'Rastreio'].map((item) => (
                 <a 
                   key={item} 
                   href={`#${item.toLowerCase().replace(' ', '-')}`} 
@@ -974,6 +1141,97 @@ function AppContent() {
                 <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 bg-corp-blue rounded-full"></span> Logística E2E</li>
               </ul>
             </motion.div>
+          </div>
+        </div>
+      </section>
+
+      {/* Rastreio Section */}
+      <section id="rastreio" className="py-12 md:py-20 px-6 bg-slate-50 no-print">
+        <div className="max-w-3xl mx-auto">
+          <div className="text-center mb-10 relative">
+            {isAdmin && (
+              <div className="mb-6 flex flex-col sm:flex-row justify-center gap-3">
+                <button 
+                  onClick={() => setShowAdminTracking(true)}
+                  className="text-sm font-bold text-corp-blue hover:text-corp-blue-light transition-colors border border-corp-blue/30 px-4 py-2 rounded-lg flex items-center justify-center gap-2 bg-blue-50/50"
+                >
+                  <Shield size={16} /> Admin Rastreios
+                </button>
+                <button 
+                  onClick={() => setShowDebitNoteModal(true)}
+                  className="text-sm font-bold text-corp-blue hover:text-corp-blue-light transition-colors border border-corp-blue/30 px-4 py-2 rounded-lg flex items-center justify-center gap-2 bg-blue-50/50"
+                >
+                  <Search size={16} /> Emitir Fatura (Debit)
+                </button>
+              </div>
+            )}
+            <h2 className="font-heading font-bold text-3xl md:text-5xl text-slate-900 uppercase tracking-tighter">Rastreamento</h2>
+            <p className="text-slate-500 mt-4 text-sm font-semibold uppercase tracking-widest">Acompanhe o status da sua carga</p>
+          </div>
+          <div className="bg-white p-6 md:p-10 rounded-2xl border border-slate-100 shadow-sm relative overflow-hidden">
+            <div className="flex flex-col sm:flex-row gap-4 relative z-10">
+              <input 
+                type="text" 
+                placeholder="Insira o código de rastreamento (Ex: PW-0001)" 
+                className="input-modern !py-4 flex-1 text-sm font-semibold"
+                value={trackingCode}
+                onChange={(e) => setTrackingCode(e.target.value)}
+              />
+              <button 
+                onClick={handleTrack}
+                disabled={isTracking || !trackingCode.trim()}
+                className="btn-modern-primary !py-4 px-8 whitespace-nowrap disabled:opacity-50"
+              >
+                {isTracking ? (
+                  <span className="flex items-center gap-2"><div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin"></div> Buscando...</span>
+                ) : (
+                  <span className="flex items-center gap-2"><Search size={20} /> Rastrear</span>
+                )}
+              </button>
+            </div>
+
+            {trackingError && (
+              <p className="text-red-500 font-semibold mt-4 text-sm bg-red-50 p-3 rounded-lg border border-red-100">{trackingError}</p>
+            )}
+
+            {trackingResult && (
+              <motion.div 
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="mt-8 border-t border-slate-100 pt-8"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-4 mb-8 bg-slate-50 p-6 rounded-xl border border-slate-100">
+                  <div>
+                    <h4 className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold mb-1">Status Atual</h4>
+                    <p className="font-heading font-bold text-xl text-corp-blue flex items-center gap-2">
+                      <Truck className="text-corp-blue-light" size={24} /> {trackingResult.status}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <h4 className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold mb-1">Atualizado em</h4>
+                    <p className="font-bold text-slate-900">{trackingResult.date}</p>
+                  </div>
+                </div>
+
+                <div className="relative pl-6 space-y-8 before:absolute before:inset-0 before:ml-[11px] before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-slate-200 before:to-transparent">
+                  {trackingResult.history.map((event: any, index: number) => (
+                    <div key={index} className="relative flex items-center justify-between md:justify-normal md:odd:flex-row-reverse group is-active">
+                      <div className="flex items-center justify-center w-6 h-6 rounded-full border-4 border-white bg-corp-blue text-white absolute left-[-24px] shadow shrink-0"></div>
+                      
+                      <div className="w-[100%] md:w-[calc(100%-4rem)] p-4 rounded-xl border border-slate-100 bg-white shadow-sm">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-1 gap-2">
+                          <span className="font-bold text-slate-900 text-sm">{event.status}</span>
+                          <span className="text-[10px] font-semibold text-slate-500 bg-slate-50 px-2 py-1 rounded-sm uppercase tracking-widest whitespace-nowrap">{event.date} às {event.time}</span>
+                        </div>
+                        <div className="text-xs text-slate-500 flex items-center gap-1 mt-2">
+                          <MapPin size={12} /> {event.location}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </motion.div>
+            )}
           </div>
         </div>
       </section>
@@ -1581,6 +1839,277 @@ function AppContent() {
         )}
       </AnimatePresence>
 
+      {/* Admin Tracking Modal */}
+      <AnimatePresence>
+        {showAdminTracking && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto"
+          >
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden"
+            >
+              <div className="flex items-center justify-between p-6 border-b border-slate-100 bg-slate-50">
+                <div className="flex items-center gap-3">
+                  <Shield size={24} className="text-corp-blue" />
+                  <div>
+                    <h3 className="font-heading font-bold text-lg text-slate-900">Admin Rastreio</h3>
+                    <p className="text-xs text-slate-500 font-semibold uppercase tracking-widest">Atualizar status da carga</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setShowAdminTracking(false)}
+                  className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors border border-transparent"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="p-6 space-y-4">
+                <div>
+                  <label className="label-corp">Código de Rastreio (Ex: PW-0001)</label>
+                  <input 
+                    type="text" 
+                    value={adminTrackingCode} 
+                    onChange={(e) => setAdminTrackingCode(e.target.value)}
+                    className="input-modern !py-2.5 !px-3 font-semibold"
+                    placeholder="Código exato"
+                  />
+                </div>
+                <div>
+                  <label className="label-corp">Novo Status</label>
+                  <input 
+                    type="text" 
+                    value={adminTrackingStatus} 
+                    onChange={(e) => setAdminTrackingStatus(e.target.value)}
+                    className="input-modern !py-2.5 !px-3"
+                    placeholder="Ex: Mercadoria despachada"
+                  />
+                </div>
+                <div>
+                  <label className="label-corp">Localização</label>
+                  <input 
+                    type="text" 
+                    value={adminTrackingLocation} 
+                    onChange={(e) => setAdminTrackingLocation(e.target.value)}
+                    className="input-modern !py-2.5 !px-3"
+                    placeholder="Ex: Guangzhou, CN"
+                  />
+                </div>
+                <div>
+                  <label className="label-corp">Data (Opcional - Padrão: Hoje)</label>
+                  <input 
+                    type="text" 
+                    value={adminTrackingDate} 
+                    onChange={(e) => setAdminTrackingDate(e.target.value)}
+                    className="input-modern !py-2.5 !px-3"
+                    placeholder="Ex: 30/04/2026"
+                  />
+                </div>
+                <div className="pt-4 flex gap-3">
+                  <button 
+                    onClick={() => setShowAdminTracking(false)}
+                    className="btn-modern-outline flex-1"
+                  >
+                    Cancelar
+                  </button>
+                  <button 
+                    onClick={saveTrackingUpdate}
+                    disabled={isSavingTracking}
+                    className="btn-modern-primary flex-1 disabled:opacity-50"
+                  >
+                    {isSavingTracking ? "Salvando..." : "Salvar Atualização"}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Debit Note Modal */}
+      <AnimatePresence>
+        {showDebitNoteModal && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto"
+          >
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-white rounded-2xl shadow-xl w-full max-w-4xl overflow-hidden my-auto"
+            >
+              <div className="flex items-center justify-between p-6 border-b border-slate-100 bg-slate-50">
+                <div className="flex items-center gap-3">
+                  <Search size={24} className="text-corp-blue" />
+                  <div>
+                    <h3 className="font-heading font-bold text-lg text-slate-900">Emitir Debit Note</h3>
+                    <p className="text-xs text-slate-500 font-semibold uppercase tracking-widest">Fatura de chegada de carga</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setShowDebitNoteModal(false)}
+                  className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors border border-transparent"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="p-6">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 pb-6 border-b border-slate-100">
+                  <div className="col-span-2">
+                    <label className="label-corp">Cliente</label>
+                    <input 
+                      type="text" 
+                      value={debitNoteForm.clientInfo} 
+                      onChange={(e) => setDebitNoteForm({...debitNoteForm, clientInfo: e.target.value})}
+                      className="input-modern !py-2.5 !px-3 font-semibold text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="label-corp">Operador</label>
+                    <input 
+                      type="text" 
+                      value={debitNoteForm.operatorInfo} 
+                      onChange={(e) => setDebitNoteForm({...debitNoteForm, operatorInfo: e.target.value})}
+                      className="input-modern !py-2.5 !px-3 font-semibold text-sm uppercase"
+                    />
+                  </div>
+                  <div>
+                    <label className="label-corp">ID Code (Rastreio)</label>
+                    <input 
+                      type="text" 
+                      value={debitNoteForm.idCode} 
+                      onChange={(e) => setDebitNoteForm({...debitNoteForm, idCode: e.target.value})}
+                      className="input-modern !py-2.5 !px-3 font-semibold text-sm uppercase"
+                    />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="label-corp">Origem</label>
+                    <div className="flex gap-4">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="radio" value="China" checked={debitNoteForm.origin === 'China'} onChange={() => setDebitNoteForm({...debitNoteForm, origin: 'China'})} className="accent-corp-blue" />
+                        <span className="text-sm font-semibold">China</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="radio" value="South Africa" checked={debitNoteForm.origin === 'South Africa'} onChange={() => setDebitNoteForm({...debitNoteForm, origin: 'South Africa'})} className="accent-corp-blue" />
+                        <span className="text-sm font-semibold">África do Sul</span>
+                      </label>
+                    </div>
+                  </div>
+                  <div className="col-span-2">
+                    <label className="label-corp">Via de Envio e Taxas</label>
+                    <div className="flex flex-col gap-2">
+                      <div className="flex gap-4">
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input type="radio" value="AIR" checked={debitNoteForm.shipMode === 'AIR'} onChange={() => setDebitNoteForm({...debitNoteForm, shipMode: 'AIR', priceType: 'FREIGHT_AND_DUTY'})} className="accent-corp-blue" />
+                          <span className="text-sm font-semibold">Aéreo (KG)</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input type="radio" value="SEA" checked={debitNoteForm.shipMode === 'SEA'} onChange={() => setDebitNoteForm({...debitNoteForm, shipMode: 'SEA'})} className="accent-corp-blue" />
+                          <span className="text-sm font-semibold">Marítimo (CBM)</span>
+                        </label>
+                      </div>
+                      {debitNoteForm.shipMode === 'SEA' && (
+                        <div className="flex items-center gap-4 mt-2 bg-slate-100 p-2 rounded-lg border border-slate-200">
+                           <label className="flex items-center gap-2 cursor-pointer">
+                             <input type="radio" value="FREIGHT_ONLY" checked={debitNoteForm.priceType === 'FREIGHT_ONLY'} onChange={() => setDebitNoteForm({...debitNoteForm, priceType: 'FREIGHT_ONLY'})} className="accent-corp-blue" />
+                             <span className="text-xs text-slate-600 font-bold">Apenas Frete</span>
+                           </label>
+                           <label className="flex items-center gap-2 cursor-pointer">
+                             <input type="radio" value="DUTY_ONLY" checked={debitNoteForm.priceType === 'DUTY_ONLY'} onChange={() => setDebitNoteForm({...debitNoteForm, priceType: 'DUTY_ONLY'})} className="accent-corp-blue" />
+                             <span className="text-xs text-slate-600 font-bold">Apenas Taxas</span>
+                           </label>
+                            <label className="flex items-center gap-2 cursor-pointer">
+                             <input type="radio" value="FREIGHT_AND_DUTY" checked={debitNoteForm.priceType === 'FREIGHT_AND_DUTY'} onChange={() => setDebitNoteForm({...debitNoteForm, priceType: 'FREIGHT_AND_DUTY'})} className="accent-corp-blue" />
+                             <span className="text-xs text-slate-600 font-bold">Frete e Taxas</span>
+                           </label>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                     <h4 className="font-heading font-bold text-sm text-slate-900 border-l-4 border-corp-blue pl-2 tracking-widest uppercase">Itens da Carga</h4>
+                     <button
+                        onClick={() => setDebitItems([...debitItems, { id: Date.now().toString(), orderNumber: '', cargoDescription: '', pkgs: 1, actualAmount: '', chargeableAmount: '', unitPrice: '', unitType: debitNoteForm.shipMode === 'AIR' ? 'KG' : 'CBM' }])}
+                        className="text-xs font-bold text-corp-blue hover:text-corp-blue-light transition-colors border border-corp-blue/30 px-3 py-1.5 rounded-lg flex items-center gap-2"
+                     >
+                       + Adicionar Item
+                     </button>
+                  </div>
+                  
+                  {debitItems.map((item, index) => (
+                    <div key={item.id} className="grid grid-cols-1 md:grid-cols-8 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-100 relative items-start">
+                      {debitItems.length > 1 && (
+                        <button 
+                          title="Remover Item"
+                          onClick={() => setDebitItems(debitItems.filter(i => i.id !== item.id))} 
+                          className="absolute -top-2 -right-2 bg-red-100 text-red-600 rounded-full p-1 hover:bg-red-200"
+                        >
+                          <X size={14} />
+                        </button>
+                      )}
+                      
+                      <div className="md:col-span-2">
+                        <label className="label-corp !text-[10px]">Order Number</label>
+                        <input type="text" value={item.orderNumber} onChange={(e) => { const newItems = [...debitItems]; newItems[index].orderNumber = e.target.value; setDebitItems(newItems); }} className="input-modern !py-2 !px-2 text-xs" />
+                      </div>
+                      <div className="md:col-span-2">
+                        <label className="label-corp !text-[10px]">Descrição</label>
+                        <input type="text" value={item.cargoDescription} onChange={(e) => { const newItems = [...debitItems]; newItems[index].cargoDescription = e.target.value; setDebitItems(newItems); }} className="input-modern !py-2 !px-2 text-xs" />
+                      </div>
+                      <div>
+                        <label className="label-corp !text-[10px]">Qtd (PKGS)</label>
+                        <input type="number" value={item.pkgs} onChange={(e) => { const newItems = [...debitItems]; newItems[index].pkgs = parseInt(e.target.value) || 0; setDebitItems(newItems); }} className="input-modern !py-2 !px-2 text-xs" min="1" />
+                      </div>
+                      <div>
+                        <label className="label-corp !text-[10px]">Actual {debitNoteForm.shipMode === 'AIR' ? '(KG)' : '(CBM)'}</label>
+                        <input type="number" step="any" value={item.actualAmount} onChange={(e) => { const newItems = [...debitItems]; newItems[index].actualAmount = e.target.value; setDebitItems(newItems); }} className="input-modern !py-2 !px-2 text-xs" />
+                      </div>
+                      <div>
+                        <label className="label-corp !text-[10px]">Chargeable</label>
+                        <input type="number" step="any" value={item.chargeableAmount} onChange={(e) => { const newItems = [...debitItems]; newItems[index].chargeableAmount = e.target.value; setDebitItems(newItems); }} className="input-modern !py-2 !px-2 text-xs" />
+                      </div>
+                      <div>
+                         <label className="label-corp !text-[10px]">Preço Un.</label>
+                         <input type="number" step="any" value={item.unitPrice} onChange={(e) => { const newItems = [...debitItems]; newItems[index].unitPrice = e.target.value; setDebitItems(newItems); }} className="input-modern !py-2 !px-2 text-xs" />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="pt-6 flex gap-3 mt-6 border-t border-slate-100">
+                  <button 
+                    onClick={() => setShowDebitNoteModal(false)}
+                    className="btn-modern-outline flex-1"
+                  >
+                    Cancelar
+                  </button>
+                  <button 
+                    onClick={gerarDebitNotePDF}
+                    disabled={isGeneratingDebit}
+                    className="btn-modern-primary flex-1 disabled:opacity-50"
+                  >
+                    {isGeneratingDebit ? "Gerando PDF..." : "Exportar Debit Note PDF"}
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Fraud Check Modal */}
       <AnimatePresence>
         {showFraudCheck && (
@@ -1810,7 +2339,7 @@ function AppContent() {
             <div className="text-right">
               <h2 className="font-heading font-bold text-2xl uppercase tracking-widest text-[#0f172a] mb-2">Fatura Proforma</h2>
               <p className="text-sm font-semibold text-[#334155] mb-1">Data: {new Date().toLocaleDateString('pt-BR')}</p>
-              <p className="text-xs text-[#94a3b8]">REF: PW-{Date.now().toString().slice(-6)}</p>
+              <p className="text-xs text-[#94a3b8]">REF: PW-{quoteRefCode}</p>
             </div>
           </div>
 
@@ -1907,6 +2436,89 @@ function AppContent() {
           <div className="text-center text-[10px] text-[#94a3b8] border-t border-[#f1f5f9] pt-8">
             <p>Estimativa gerada em sistema. Sujeita a alterações mediante aferição de peso/cubagem na origem e variações cambiais.</p>
             <p className="font-bold text-[#475569] mt-2">PRIMEWAY INVEST & LOGÍSTICA - +258 84 291 4655 | primewayinvestelogistica@gmail.com</p>
+          </div>
+        </div>
+      </div>
+
+      {/* --- Debit Note Print Area --- */}
+      <div id="debit-note-print-area" className="hidden bg-[#ffffff] font-sans text-[#1A284F] fixed top-0 left-0 w-[1123px] z-[-50]">
+        <div className="border-[8px] border-[#2D4C8C] max-w-[1123px] mx-auto bg-white rounded-xl overflow-hidden m-4">
+          {/* Header Banner */}
+          <div className="bg-[#f8fafc] border-b-[4px] border-[#2D4C8C] flex items-center justify-between px-12 py-8">
+            <div className="flex items-center gap-6">
+               <img 
+                  src={logoBase64} 
+                  alt="PrimeWay Logo" 
+                  className="w-40 h-auto object-contain shrink-0"
+                />
+            </div>
+            <div className="text-center">
+              <h1 className="text-3xl font-black text-[#1A284F] tracking-wider mb-2">
+                {debitNoteForm.shipMode === 'AIR' ? '✈️ AIR CARGO' : '🚢 SEA CARGO'} DE {debitNoteForm.origin.toUpperCase()} PARA MAPUTO
+              </h1>
+              <h2 className="text-xl font-bold text-[#2D4C8C] italic">Excelência em cada importação</h2>
+            </div>
+            <div className="flex items-center">
+               <img src="https://flagcdn.com/w160/mz.png" alt="Mozambique Flag" className="w-[80px] object-cover shadow-sm border border-slate-200" crossOrigin="anonymous"/>
+            </div>
+          </div>
+          
+          <div className="text-center py-4 bg-[#2D4C8C] text-white">
+            <h1 className="text-3xl font-black tracking-widest">NOTA DE DÉBITO (DEBIT NOTE)</h1>
+          </div>
+
+          <div className="px-8 py-4 flex justify-between items-center border-b-2 border-slate-200 text-xl font-bold text-[#1A284F]">
+            <div className="uppercase">CLIENTE: <span className="text-[#2D4C8C]">{debitNoteForm.clientInfo}</span></div>
+            <div className="uppercase">Rastreio (ID): <span className="text-[#2D4C8C]">{debitNoteForm.idCode}</span></div>
+            <div className="uppercase">OPERADOR: <span className="text-[#2D4C8C]">{debitNoteForm.operatorInfo}</span></div>
+          </div>
+
+          <div className="text-center py-3 border-b-2 border-slate-200 bg-slate-50">
+            <h2 className="text-lg font-black text-[#1A284F] tracking-widest uppercase">
+              {debitNoteForm.priceType === 'FREIGHT_AND_DUTY' ? 'PREÇO INCLUI FRETE E TAXAS ALFANDEGÁRIAS' : debitNoteForm.priceType === 'DUTY_ONLY' ? 'PREÇO INCLUI APENAS TAXAS ALFANDEGÁRIAS' : 'PREÇO INCLUI APENAS O FRETE'}
+            </h2>
+          </div>
+
+          <table className="w-full text-center border-collapse text-base border-b-2 border-[#2D4C8C]">
+            <thead>
+              <tr className="bg-[#1A284F] text-white">
+                <th className="py-4 px-2 border-r border-[#2D4C8C] font-bold">Nº PEDIDO</th>
+                <th className="py-4 px-2 border-r border-[#2D4C8C] font-bold">DESCRIÇÃO DA CARGA</th>
+                <th className="py-4 px-2 border-r border-[#2D4C8C] font-bold">VOLUMES<br/>(PKGS)</th>
+                <th className="py-4 px-2 border-r border-[#2D4C8C] font-bold">TAMANHO REAL<br/>{debitNoteForm.shipMode === 'AIR' ? '(KG)' : '(CBM)'}</th>
+                <th className="py-4 px-2 border-r border-[#2D4C8C] font-bold">TAMANHO TAXÁVEL<br/>{debitNoteForm.shipMode === 'AIR' ? '(KG)' : '(CBM)'}</th>
+                <th className="py-4 px-2 border-r border-[#2D4C8C] font-bold">PREÇO UNIT.<br/>(MZN)</th>
+                <th className="py-4 px-2 font-bold">SUBTOTAL<br/>(MZN)</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white text-[#1A284F]">
+              {debitItems.map((item, idx) => {
+                const chargeable = parseFloat(String(item.chargeableAmount)) || 0;
+                const price = parseFloat(String(item.unitPrice)) || 0;
+                return (
+                <tr key={item.id} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50"}>
+                  <td className="py-4 px-2 border-r border-slate-200 font-bold uppercase">{item.orderNumber}</td>
+                  <td className="py-4 px-2 border-r border-slate-200 font-bold uppercase">{item.cargoDescription}</td>
+                  <td className="py-4 px-2 border-r border-slate-200 font-bold">{item.pkgs}</td>
+                  <td className="py-4 px-2 border-r border-slate-200 font-bold">{item.actualAmount || '-'}</td>
+                  <td className="py-4 px-2 border-r border-slate-200 font-bold">{item.chargeableAmount}</td>
+                  <td className="py-4 px-2 border-r border-slate-200 font-bold">{price.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                  <td className="py-4 px-2 font-bold text-[#2D4C8C]">
+                    {(chargeable * price).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </td>
+                </tr>
+                );
+              })}
+            </tbody>
+          </table>
+
+          <div className="flex bg-[#1A284F] text-white">
+            <div className="w-[75%] py-5 text-right pr-6 font-black text-2xl tracking-widest border-r border-[#2D4C8C]">
+              VALOR TOTAL A PAGAR:
+            </div>
+            <div className="w-[25%] py-5 text-center font-black text-2xl">
+              MZN {debitItems.reduce((acc, item) => acc + ((parseFloat(String(item.chargeableAmount)) || 0) * (parseFloat(String(item.unitPrice)) || 0)), 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+            </div>
           </div>
         </div>
       </div>

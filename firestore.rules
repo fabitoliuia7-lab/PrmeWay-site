@@ -81,6 +81,10 @@ service cloud.firestore {
              data.createdAt is timestamp;
     }
 
+    function isValidTracking(data) {
+      return data.status is string;
+    }
+
     // ===============================================================
     // Match Rules
     // ===============================================================
@@ -89,6 +93,14 @@ service cloud.firestore {
       allow read: if isOwner(userId) || isAdmin();
       allow create: if isOwner(userId) && isValidUser(request.resource.data) && (request.resource.data.role == 'client' || isAdmin());
       allow update: if isOwner(userId) && isValidUser(request.resource.data) && (request.resource.data.role == resource.data.role || isAdmin());
+    }
+
+    match /tracking/{trackingId} {
+      allow get: if true;
+      allow list: if isAdmin();
+      allow create: if isAdmin() && isValidTracking(request.resource.data);
+      allow update: if isAdmin() && isValidTracking(request.resource.data);
+      allow delete: if isAdmin();
     }
 
     match /quotes/{quoteId} {

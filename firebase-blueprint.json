@@ -28,9 +28,25 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["userId", "total", "moeda", "createdAt"]
+    },
+    "Tracking": {
+      "title": "Tracking Information",
+      "description": "Logistics tracking status.",
+      "type": "object",
+      "properties": {
+        "status": { "type": "string" },
+        "location": { "type": "string" },
+        "date": { "type": "string" },
+        "history": { "type": "array" }
+      },
+      "required": ["status"]
     }
   },
   "firestore": {
+    "/tracking/{trackingId}": {
+      "schema": "Tracking",
+      "description": "Cargo tracking status."
+    },
     "/users/{userId}": {
       "schema": "UserProfile",
       "description": "User profile data."
