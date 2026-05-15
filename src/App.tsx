@@ -26,7 +26,11 @@ import {
   Shield,
   AlertTriangle,
   Search,
-  Truck
+  Truck,
+  FileText,
+  Edit,
+  Download,
+  Eye
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -189,6 +193,9 @@ interface CalculationResult {
   valorComissao: number;
   taxaLevantamento: number;
   custosEnvio: number;
+  valorDespacho: number;
+  valorFreteInt: number;
+  valorEnvioLocal: number;
   total: number;
   cbmTotal: number;
   pesoTotal: number;
@@ -212,6 +219,8 @@ function AppContent() {
   const isAdmin = user?.email === 'fabitoliuia7@gmail.com';
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [savedQuotes, setSavedQuotes] = useState<any[]>([]);
+  const [savedDebitNotes, setSavedDebitNotes] = useState<any[]>([]);
+  const [historyTab, setHistoryTab] = useState<'quotes' | 'debitNotes'>('quotes');
   const [showHistory, setShowHistory] = useState(false);
   const [showFraudCheck, setShowFraudCheck] = useState(false);
   const [quoteRefCode] = useState(() => Math.floor(1000 + Math.random() * 9000).toString().padStart(4, '0'));
@@ -239,6 +248,7 @@ function AppContent() {
   const [taxasAduaneiras, setTaxasAduaneiras] = useState(0);
   const [freteInternacional, setFreteInternacional] = useState(0);
   const [taxaEnvioLocal, setTaxaEnvioLocal] = useState(0);
+  const [aplicarMargemSeguranca, setAplicarMargemSeguranca] = useState(false);
   const [calcularRevenda, setCalcularRevenda] = useState(false);
   const [margemLucro, setMargemLucro] = useState(0);
   const [custosAdicionais, setCustosAdicionais] = useState(0);
@@ -405,27 +415,48 @@ function AppContent() {
   useEffect(() => {
     if (!user || !isAuthReady) {
       setSavedQuotes([]);
+      setSavedDebitNotes([]);
       return;
     }
 
-    const path = 'quotes';
-    const q = query(
-      collection(db, path),
+    const quotesPath = 'quotes';
+    const qQuotes = query(
+      collection(db, quotesPath),
       where('userId', '==', user.uid),
       orderBy('createdAt', 'desc')
     );
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
+    const unsubscribeQuotes = onSnapshot(qQuotes, (snapshot) => {
       const quotes = snapshot.docs.map(doc => ({
         id: doc.id,
         ...doc.data()
       }));
       setSavedQuotes(quotes);
     }, (error) => {
-      handleFirestoreError(error, OperationType.LIST, path);
+      handleFirestoreError(error, OperationType.LIST, quotesPath);
     });
 
-    return () => unsubscribe();
+    const debitPath = 'debitNotes';
+    const qDebit = query(
+      collection(db, debitPath),
+      where('userId', '==', user.uid),
+      orderBy('createdAt', 'desc')
+    );
+
+    const unsubscribeDebit = onSnapshot(qDebit, (snapshot) => {
+      const debits = snapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+      setSavedDebitNotes(debits);
+    }, (error) => {
+      console.warn("Debit Notes collection error:", error);
+    });
+
+    return () => {
+      unsubscribeQuotes();
+      unsubscribeDebit();
+    };
   }, [user, isAuthReady]);
 
   const handleLogin = async () => {
@@ -467,6 +498,7 @@ function AppContent() {
         taxasAduaneiras,
         freteInternacional,
         taxaEnvioLocal,
+        aplicarMargemSeguranca,
         calcularRevenda,
         margemLucro,
         custosAdicionais,
@@ -529,7 +561,7 @@ function AppContent() {
       const qtd = Number(p.quantidade) || 0;
       subtotalProdutos += (Number(p.valorUnitario) || 0) * qtd + (Number(p.taxaEnvioFornecedor) || 0);
       const cbmUnit = (Number(p.comprimento) || 0) * (Number(p.largura) || 0) * (Number(p.altura) || 0) / 1000000;
-      cbmTotal += cbmUnit * qtd * 1.2; // 20% safety factor for packing
+      cbmTotal += cbmUnit * qtd * (aplicarMargemSeguranca ? 1.2 : 1);
       pesoTotal += (Number(p.pesoUnitario) || 0) * qtd;
     });
 
@@ -540,59 +572,69 @@ function AppContent() {
     const pesoFaturado = pesoTotal > 0 ? Math.max(0.5, pesoTotal) : 0;
     
     let custosEnvio = 0;
+    let valorDespacho = 0;
+    let valorFreteInt = 0;
+    let valorEnvioLocal = Number(taxaEnvioLocal) || 0;
     
     if (tipoTransporte === 'aereo') {
-      let custoAereoTotalMT = 0;
-      
+      let totalWeightWeightBased = 0;
+      let totalCostWeightBased = 0;
+      let totalCostUnitBased = 0;
+      let totalWeightTotal = 0;
+
       produtos.forEach(p => {
         const qtd = Number(p.quantidade) || 0;
         const pesoKg = Number(p.pesoUnitario) || 0;
-        const comp = Number(p.comprimento) || 0;
-        const larg = Number(p.largura) || 0;
-        const alt = Number(p.altura) || 0;
-        // Volumetric weight: (L * W * H) / 6000
-        const volWeight = (comp * larg * alt) / 6000;
-        
-        const chargeableWeightUnit = Math.max(pesoKg, volWeight);
-        
-        let precoAereoUnitarioFaturado = 0;
-        switch (p.categoriaAerea) {
-          case 'normal':
-            precoAereoUnitarioFaturado = chargeableWeightUnit * 1600;
-            break;
-          case 'sensitive':
-            precoAereoUnitarioFaturado = chargeableWeightUnit * 2000;
-            break;
-          case 'watch_battery':
-            precoAereoUnitarioFaturado = 500;
-            break;
-          case 'mobile':
-            precoAereoUnitarioFaturado = 5000;
-            break;
-          case 'laptop':
-            precoAereoUnitarioFaturado = 6500;
-            break;
-          default:
-            precoAereoUnitarioFaturado = chargeableWeightUnit * 1600;
-            break;
+        const weightLine = pesoKg * qtd;
+        totalWeightTotal += weightLine;
+
+        if (p.categoriaAerea === 'normal' || p.categoriaAerea === 'sensitive') {
+          const rate = p.categoriaAerea === 'normal' ? 1600 : 2000;
+          totalWeightWeightBased += weightLine;
+          totalCostWeightBased += weightLine * rate;
+        } else {
+          let unitPrice = 0;
+          switch (p.categoriaAerea) {
+            case 'watch_battery':
+              unitPrice = 500;
+              break;
+            case 'mobile':
+              unitPrice = 5000;
+              break;
+            case 'laptop':
+              unitPrice = 6500;
+              break;
+            default:
+              unitPrice = 0;
+          }
+          totalCostUnitBased += unitPrice * qtd;
         }
-        
-        custoAereoTotalMT += precoAereoUnitarioFaturado * qtd;
       });
+
+      // Apply 0.5kg minimum rule
+      // If total weight is less than 0.5kg, adjust weight-based cost to 0.5kg minimum
+      if (totalWeightTotal > 0 && totalWeightTotal < 0.5) {
+        if (totalWeightWeightBased > 0) {
+          // Scale weight-based cost to a 0.5kg shipment equivalent
+          totalCostWeightBased = (totalCostWeightBased / totalWeightWeightBased) * 0.5;
+        }
+      }
+
+      let custoAereoTotalMT = totalCostWeightBased + totalCostUnitBased;
       
-      // Apply min charge limit of 0.5kg for normal goods equivalent (800 MT)
-      if (pesoFaturado < 0.5 && custoAereoTotalMT > 0 && custoAereoTotalMT < 800) {
-        custoAereoTotalMT = 800; // minimum charge
+      // Ensure absolute minimum charge of 800 MT (0.5kg normal goods) for any shipment with weight
+      if (totalWeightTotal > 0 && totalWeightTotal < 0.5 && custoAereoTotalMT < 800) {
+        custoAereoTotalMT = 800;
       }
       
       const convertedCost = moeda === 'USD' || moeda === 'EUR' ? (custoAereoTotalMT / (Number(taxaCambio) || 1)) : custoAereoTotalMT;
-      custoAereoTotalMT = convertedCost;
-      
-      // If there are still taxasAduaneiras or freteInternacional added locally or explicitly, we can add them to respect legacy inputs, or just replace entirely. Standard is + taxaEnvioLocal.
-      custosEnvio = custoAereoTotalMT + Number(taxaEnvioLocal);
+      valorFreteInt = convertedCost; // Note: For Air, this encapsulates both freight and duty logically
+      custosEnvio = convertedCost + valorEnvioLocal;
     } else {
       const baseCalculoEnvio = cbmFaturado;
-      custosEnvio = (baseCalculoEnvio * Number(taxasAduaneiras)) + (baseCalculoEnvio * Number(freteInternacional)) + Number(taxaEnvioLocal);
+      valorDespacho = baseCalculoEnvio * Number(taxasAduaneiras);
+      valorFreteInt = baseCalculoEnvio * Number(freteInternacional);
+      custosEnvio = valorDespacho + valorFreteInt + valorEnvioLocal;
     }
 
     let total = subtotalProdutos + valorTaxaProc + valorComissao + Number(taxaLevantamento) + custosEnvio;
@@ -607,13 +649,16 @@ function AppContent() {
       valorComissao,
       taxaLevantamento: Number(taxaLevantamento),
       custosEnvio,
+      valorDespacho,
+      valorFreteInt,
+      valorEnvioLocal,
       total,
       cbmTotal,
       pesoTotal,
       cbmFaturado,
       pesoFaturado
     };
-  }, [produtos, taxaProcessamento, comissaoServicos, taxaLevantamento, tipoTransporte, taxasAduaneiras, freteInternacional, taxaEnvioLocal, calcularRevenda, margemLucro, custosAdicionais, moeda, taxaCambio]);
+  }, [produtos, taxaProcessamento, comissaoServicos, taxaLevantamento, tipoTransporte, taxasAduaneiras, freteInternacional, taxaEnvioLocal, calcularRevenda, margemLucro, custosAdicionais, moeda, taxaCambio, aplicarMargemSeguranca]);
 
   // --- Handlers ---
 
@@ -666,6 +711,7 @@ function AppContent() {
       setTaxasAduaneiras(0);
       setFreteInternacional(0);
       setTaxaEnvioLocal(0);
+      setAplicarMargemSeguranca(false);
       setCalcularRevenda(false);
       setMargemLucro(0);
       setCustosAdicionais(0);
@@ -753,6 +799,22 @@ function AppContent() {
 
     try {
       setIsGeneratingDebit(true);
+
+      // Save to Firebase (History)
+      if (user) {
+        try {
+          await addDoc(collection(db, 'debitNotes'), {
+            userId: user.uid,
+            ...debitNoteForm,
+            items: debitItems,
+            totalMZN: debitItems.reduce((acc, item) => acc + ((parseFloat(String(item.chargeableAmount)) || 0) * (parseFloat(String(item.unitPrice)) || 0)), 0),
+            createdAt: Timestamp.now()
+          });
+        } catch (saveError) {
+          console.error("Error saving debit note to history:", saveError);
+        }
+      }
+
       element.classList.remove('hidden', 'pointer-events-none');
       element.style.display = 'block';
 
@@ -767,9 +829,22 @@ function AppContent() {
       });
 
       const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
       const pdfHeight = (element.offsetHeight * pdfWidth) / element.offsetWidth;
 
-      pdf.addImage(dataUrl, 'JPEG', 0, 0, pdfWidth, pdfHeight);
+      let position = 0;
+      let heightLeft = pdfHeight;
+
+      pdf.addImage(dataUrl, 'JPEG', 0, position, pdfWidth, pdfHeight);
+      heightLeft -= pageHeight;
+
+      while (heightLeft > 0) {
+        position -= pageHeight;
+        pdf.addPage();
+        pdf.addImage(dataUrl, 'JPEG', 0, position, pdfWidth, pdfHeight);
+        heightLeft -= pageHeight;
+      }
+
       pdf.save(`Debit_Note_${debitNoteForm.idCode || 'Nova'}.pdf`);
     } catch (error) {
       console.error("Erro ao gerar PDF:", error);
@@ -806,10 +881,24 @@ function AppContent() {
       });
 
       const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
       const pdfHeight = (element.offsetHeight * pdfWidth) / element.offsetWidth;
 
-      pdf.addImage(dataUrl, 'JPEG', 0, 0, pdfWidth, pdfHeight);
-      pdf.save(`Fatura_Proforma_PrimeWay_${Date.now()}.pdf`);
+      let position = 0;
+      let heightLeft = pdfHeight;
+
+      pdf.addImage(dataUrl, 'JPEG', 0, position, pdfWidth, pdfHeight);
+      heightLeft -= pageHeight;
+
+      while (heightLeft > 0) {
+        position -= pageHeight;
+        pdf.addPage();
+        pdf.addImage(dataUrl, 'JPEG', 0, position, pdfWidth, pdfHeight);
+        heightLeft -= pageHeight;
+      }
+
+      const clientNameFormatted = nomeCliente ? nomeCliente.trim().replace(/\s+/g, '_') : Date.now();
+      pdf.save(`Fatura_Proforma_PrimeWay_${clientNameFormatted}.pdf`);
     } catch (error) {
       console.error("Erro ao gerar PDF:", error);
       alert("Ocorreu um erro ao gerar a fatura. Por favor, tente novamente.");
@@ -1323,12 +1412,6 @@ function AppContent() {
                   <span className="w-6 h-6 rounded-md bg-corp-blue/5 flex items-center justify-center text-[10px]">02</span>
                   Mercadorias
                 </h3>
-                <button 
-                  onClick={adicionarProduto} 
-                  className="text-corp-blue bg-corp-blue/5 px-4 py-2 text-[10px] font-semibold uppercase tracking-widest hover:bg-corp-blue hover:text-white transition-all rounded-lg flex items-center gap-2"
-                >
-                  <Plus size={14} /> Add Item
-                </button>
               </div>
               
               <div className="space-y-6">
@@ -1423,42 +1506,52 @@ function AppContent() {
                       />
                     </div>
                     
-                    <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
-                      <div className="flex flex-col md:flex-row md:items-center gap-4">
-                        <label className="label-corp !text-corp-blue-light !mb-0 shrink-0">Dimensões (cm)</label>
-                        <div className="grid grid-cols-3 gap-3 flex-1">
-                          <div className="relative">
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[8px] font-bold text-slate-300 uppercase">C</span>
-                            <input 
-                              type="number" 
-                              value={p.comprimento || ''} 
-                              onChange={(e) => atualizarProduto(p.id, 'comprimento', Number(e.target.value))}
-                              className="input-modern !bg-slate-50 !py-2.5 !pl-6 !pr-2 text-xs" 
-                            />
-                          </div>
-                          <div className="relative">
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[8px] font-bold text-slate-300 uppercase">L</span>
-                            <input 
-                              type="number" 
-                              value={p.largura || ''} 
-                              onChange={(e) => atualizarProduto(p.id, 'largura', Number(e.target.value))}
-                              className="input-modern !bg-slate-50 !py-2.5 !pl-6 !pr-2 text-xs" 
-                            />
-                          </div>
-                          <div className="relative">
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[8px] font-bold text-slate-300 uppercase">A</span>
-                            <input 
-                              type="number" 
-                              value={p.altura || ''} 
-                              onChange={(e) => atualizarProduto(p.id, 'altura', Number(e.target.value))}
-                              className="input-modern !bg-slate-50 !py-2.5 !pl-6 !pr-2 text-xs" 
-                            />
+                    {tipoTransporte === 'maritimo' && (
+                      <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
+                        <div className="flex flex-col md:flex-row md:items-center gap-4">
+                          <label className="label-corp !text-corp-blue-light !mb-0 shrink-0">Dimensões (cm)</label>
+                          <div className="grid grid-cols-3 gap-3 flex-1">
+                            <div className="relative">
+                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[8px] font-bold text-slate-300 uppercase">C</span>
+                              <input 
+                                type="number" 
+                                value={p.comprimento || ''} 
+                                onChange={(e) => atualizarProduto(p.id, 'comprimento', Number(e.target.value))}
+                                className="input-modern !bg-slate-50 !py-2.5 !pl-6 !pr-2 text-xs" 
+                              />
+                            </div>
+                            <div className="relative">
+                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[8px] font-bold text-slate-300 uppercase">L</span>
+                              <input 
+                                type="number" 
+                                value={p.largura || ''} 
+                                onChange={(e) => atualizarProduto(p.id, 'largura', Number(e.target.value))}
+                                className="input-modern !bg-slate-50 !py-2.5 !pl-6 !pr-2 text-xs" 
+                              />
+                            </div>
+                            <div className="relative">
+                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[8px] font-bold text-slate-300 uppercase">A</span>
+                              <input 
+                                type="number" 
+                                value={p.altura || ''} 
+                                onChange={(e) => atualizarProduto(p.id, 'altura', Number(e.target.value))}
+                                className="input-modern !bg-slate-50 !py-2.5 !pl-6 !pr-2 text-xs" 
+                              />
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
+                    )}
                   </motion.div>
                 ))}
+              </div>
+              <div className="mt-6 flex justify-center">
+                <button 
+                  onClick={adicionarProduto} 
+                  className="w-full md:w-auto justify-center text-corp-blue bg-corp-blue/5 border border-corp-blue/10 px-6 py-3 text-xs font-bold uppercase tracking-widest hover:bg-corp-blue hover:text-white transition-all rounded-xl flex items-center gap-2"
+                >
+                  <Plus size={16} /> Adicionar Item
+                </button>
               </div>
             </section>
 
@@ -1516,7 +1609,7 @@ function AppContent() {
           </div>
 
           {/* Results Column */}
-          <div className="space-y-6">
+          <div id="calculation-results" className="space-y-6">
             <div className="glass-card !bg-corp-blue !border-none p-8 text-white rounded-2xl sticky top-24">
               <span className="text-[10px] font-semibold uppercase tracking-[0.4em] text-white/50 mb-6 block">Resultado</span>
               
@@ -1575,8 +1668,22 @@ function AppContent() {
 
             {/* Resale Simulation */}
             <section className="bento-item !p-8">
+              <div className="flex items-center gap-4 mb-4">
+                <label className="relative inline-flex items-center cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    id="aplicarMargemSeguranca" 
+                    checked={aplicarMargemSeguranca} 
+                    onChange={(e) => setAplicarMargemSeguranca(e.target.checked)}
+                    className="sr-only peer" 
+                  />
+                  <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-corp-blue"></div>
+                </label>
+                <label htmlFor="aplicarMargemSeguranca" className="font-semibold text-[10px] text-slate-900 uppercase tracking-widest cursor-pointer select-none">Aplicar Margem de Segurança CBM (+20%)</label>
+              </div>
+
               <div className="flex items-center gap-4 mb-8">
-                <div className="relative inline-flex items-center cursor-pointer">
+                <label className="relative inline-flex items-center cursor-pointer">
                   <input 
                     type="checkbox" 
                     id="calcularRevenda" 
@@ -1585,7 +1692,7 @@ function AppContent() {
                     className="sr-only peer" 
                   />
                   <div className="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-corp-blue"></div>
-                </div>
+                </label>
                 <label htmlFor="calcularRevenda" className="font-semibold text-[10px] text-slate-900 uppercase tracking-widest cursor-pointer select-none">Simulação de Revenda</label>
               </div>
               
@@ -1724,77 +1831,171 @@ function AppContent() {
               >
                 <X size={24} />
               </button>
-              <h3 className="font-heading font-bold text-3xl text-slate-900 uppercase tracking-tighter mb-8 flex items-center gap-4">
-                <History className="text-corp-blue" /> Histórico de Cotações
+              <h3 className="font-heading font-bold text-3xl text-slate-900 uppercase tracking-tighter mb-4 flex items-center gap-4">
+                <History className="text-corp-blue" /> Histórico
               </h3>
+
+              <div className="flex border-b border-slate-100 mb-6">
+                <button 
+                  onClick={() => setHistoryTab('quotes')}
+                  className={`px-6 py-2 text-xs font-bold uppercase tracking-widest transition-colors border-b-2 ${historyTab === 'quotes' ? 'border-corp-blue text-corp-blue' : 'border-transparent text-slate-400'}`}
+                >
+                  Cotações
+                </button>
+                <button 
+                  onClick={() => setHistoryTab('debitNotes')}
+                  className={`px-6 py-2 text-xs font-bold uppercase tracking-widest transition-colors border-b-2 ${historyTab === 'debitNotes' ? 'border-corp-blue text-corp-blue' : 'border-transparent text-slate-400'}`}
+                >
+                  Facturas (Debit)
+                </button>
+              </div>
               
               <div className="flex-1 overflow-y-auto space-y-4 pr-2">
-                {savedQuotes.length === 0 ? (
-                  <div className="text-center py-20 text-slate-400">
-                    <Package size={48} className="mx-auto mb-4 opacity-20" />
-                    <p>Nenhuma cotação salva encontrada.</p>
-                  </div>
-                ) : (
-                  savedQuotes.map((quote) => (
-                    <div key={quote.id} className="p-6 border border-slate-100 rounded-2xl hover:bg-slate-50 transition-colors group">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <div className="flex items-center gap-3 mb-2">
-                            <span className={`text-[8px] font-bold uppercase tracking-widest px-2 py-1 rounded-full ${quote.tipoTransporte === 'maritimo' ? 'bg-blue-50 text-blue-600' : 'bg-purple-50 text-purple-600'}`}>
-                              {quote.tipoTransporte}
-                            </span>
-                            <span className="text-[10px] text-slate-400 font-mono">
-                              {quote.createdAt?.toDate().toLocaleString('pt-BR')}
-                            </span>
-                          </div>
-                          <h4 className="font-bold text-slate-900">
-                            {quote.produtos?.length || 0} Itens • {quote.moeda} {formatoMoeda(quote.total)}
-                          </h4>
-                          <p className="text-xs text-slate-500 mt-1">
-                            {quote.produtos?.map((p: any) => p.descricao).join(', ').slice(0, 100)}...
-                          </p>
-                        </div>
-                        <button 
-                          onClick={() => {
-                            setNomeCliente(quote.nomeCliente || '');
-                            setTaxaCambio(quote.taxaCambio || 64);
-                            setMoeda(quote.moeda);
-                            setTipoTransporte(quote.tipoTransporte);
-                            setTaxaProcessamento(quote.taxaProcessamento || 0);
-                            setComissaoServicos(quote.comissaoServicos || 0);
-                            setTaxaLevantamento(quote.taxaLevantamento || 0);
-                            setTaxasAduaneiras(quote.taxasAduaneiras || 0);
-                            setFreteInternacional(quote.freteInternacional || 0);
-                            setTaxaEnvioLocal(quote.taxaEnvioLocal || 0);
-                            setCalcularRevenda(quote.calcularRevenda || false);
-                            setMargemLucro(quote.margemLucro || 0);
-                            setCustosAdicionais(quote.custosAdicionais || 0);
-                            
-                            if (quote.produtos && quote.produtos.length > 0) {
-                              setProdutos(quote.produtos.map((p: any, index: number) => ({
-                                id: Date.now() + index,
-                                descricao: p.descricao || '',
-                                imageUrl: p.imageUrl || '',
-                                categoriaAerea: p.categoriaAerea || 'normal',
-                                valorUnitario: p.valorUnitario || 0,
-                                taxaEnvioFornecedor: p.taxaEnvioFornecedor || 0,
-                                quantidade: p.quantidade || 1,
-                                comprimento: p.comprimento || 0,
-                                largura: p.largura || 0,
-                                altura: p.altura || 0,
-                                pesoUnitario: p.pesoUnitario || 0
-                              })));
-                            }
-                            
-                            setShowHistory(false);
-                          }}
-                          className="opacity-0 group-hover:opacity-100 transition-opacity btn-modern-primary !py-2 !px-4 !text-[10px]"
-                        >
-                          Carregar
-                        </button>
-                      </div>
+                {historyTab === 'quotes' ? (
+                  savedQuotes.length === 0 ? (
+                    <div className="text-center py-20 text-slate-400">
+                      <Package size={48} className="mx-auto mb-4 opacity-20" />
+                      <p>Nenhuma cotação salva encontrada.</p>
                     </div>
-                  ))
+                  ) : (
+                    savedQuotes.map((quote) => (
+                      <div 
+                        key={quote.id} 
+                        onClick={() => {
+                          setNomeCliente(quote.nomeCliente || '');
+                          setTaxaCambio(quote.taxaCambio || 64);
+                          setMoeda(quote.moeda);
+                          setTipoTransporte(quote.tipoTransporte);
+                          setTaxaProcessamento(quote.taxaProcessamento || 0);
+                          setComissaoServicos(quote.comissaoServicos || 0);
+                          setTaxaLevantamento(quote.taxaLevantamento || 0);
+                          setTaxasAduaneiras(quote.taxasAduaneiras || 0);
+                          setFreteInternacional(quote.freteInternacional || 0);
+                          setTaxaEnvioLocal(quote.taxaEnvioLocal || 0);
+                          setAplicarMargemSeguranca(quote.aplicarMargemSeguranca || false);
+                          setCalcularRevenda(quote.calcularRevenda || false);
+                          setMargemLucro(quote.margemLucro || 0);
+                          setCustosAdicionais(quote.custosAdicionais || 0);
+                          
+                          if (quote.produtos && quote.produtos.length > 0) {
+                            setProdutos(quote.produtos.map((p: any, index: number) => ({
+                              id: Date.now() + index,
+                              descricao: p.descricao || '',
+                              imageUrl: p.imageUrl || '',
+                              categoriaAerea: p.categoriaAerea || 'normal',
+                              valorUnitario: p.valorUnitario || 0,
+                              taxaEnvioFornecedor: p.taxaEnvioFornecedor || 0,
+                              quantidade: p.quantidade || 1,
+                              comprimento: p.comprimento || 0,
+                              largura: p.largura || 0,
+                              altura: p.altura || 0,
+                              pesoUnitario: p.pesoUnitario || 0
+                            })));
+                          }
+                          
+                          setShowHistory(false);
+                          setTimeout(() => {
+                            document.getElementById('calculation-results')?.scrollIntoView({ behavior: 'smooth' });
+                          }, 300);
+                        }}
+                        className="p-6 border border-slate-100 rounded-2xl hover:bg-slate-50 active:bg-slate-100 transition-all cursor-pointer group mb-4"
+                      >
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <div className="flex items-center gap-3 mb-2">
+                              <span className={`text-[8px] font-bold uppercase tracking-widest px-2 py-1 rounded-full ${quote.tipoTransporte === 'maritimo' ? 'bg-blue-50 text-blue-600' : 'bg-purple-50 text-purple-600'}`}>
+                                {quote.tipoTransporte}
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-mono">
+                                {quote.createdAt?.toDate ? quote.createdAt.toDate().toLocaleString('pt-BR') : 'Sem data'}
+                              </span>
+                            </div>
+                            <h4 className="font-bold text-slate-900">
+                              {quote.nomeCliente ? `${quote.nomeCliente} • ` : ''} {quote.produtos?.length || 0} Itens • {quote.moeda} {formatoMoeda(quote.total)}
+                            </h4>
+                            <p className="text-xs text-slate-500 mt-1">
+                              {quote.produtos?.map((p: any) => p.descricao).join(', ').slice(0, 100)}...
+                            </p>
+                          </div>
+                          <div className="flex items-center text-corp-blue">
+                             <Edit size={16} />
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )
+                ) : (
+                  savedDebitNotes.length === 0 ? (
+                    <div className="text-center py-20 text-slate-400">
+                      <FileText size={48} className="mx-auto mb-4 opacity-20" />
+                      <p>Nenhuma factura salva encontrada.</p>
+                    </div>
+                  ) : (
+                    savedDebitNotes.map((debit) => (
+                      <div 
+                        key={debit.id} 
+                        className="p-6 border border-slate-100 rounded-2xl hover:bg-slate-50 transition-all group mb-4"
+                      >
+                        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                          <div className="flex-1">
+                            <div className="flex items-center gap-3 mb-2">
+                              <span className={`text-[8px] font-bold uppercase tracking-widest px-2 py-1 rounded-full ${debit.shipMode === 'SEA' ? 'bg-blue-50 text-blue-600' : 'bg-purple-50 text-purple-600'}`}>
+                                {debit.shipMode === 'AIR' ? '✈️ Aéreo' : '🚢 Marítimo'}
+                              </span>
+                              <span className="text-[10px] text-slate-400 font-mono">
+                                {debit.createdAt?.toDate ? debit.createdAt.toDate().toLocaleString('pt-BR') : 'Sem data'}
+                              </span>
+                            </div>
+                            <h4 className="font-bold text-slate-900">
+                              {debit.clientInfo || 'Sem Cliente'} • MZN {formatoMoeda(debit.totalMZN)}
+                            </h4>
+                            <p className="text-xs text-slate-500 mt-1">
+                              Ref: {debit.idCode || 'N/A'} • {debit.items?.length || 0} Itens
+                            </p>
+                          </div>
+                          <div className="flex gap-2 w-full md:w-auto">
+                            <button 
+                              onClick={() => {
+                                setDebitNoteForm({
+                                  clientInfo: debit.clientInfo || '',
+                                  operatorInfo: debit.operatorInfo || '',
+                                  idCode: debit.idCode || '',
+                                  origin: debit.origin || 'China',
+                                  shipMode: debit.shipMode || 'AIR',
+                                  priceType: debit.priceType || 'FREIGHT_AND_DUTY',
+                                });
+                                setDebitItems(debit.items || []);
+                                setShowHistory(false);
+                                setShowDebitNoteModal(true);
+                              }}
+                              className="flex-1 md:flex-none btn-modern-primary !py-2 !px-4 !text-[10px] flex items-center justify-center gap-2"
+                            >
+                              <Edit size={14} /> Editar
+                            </button>
+                            <button 
+                              onClick={async () => {
+                                setDebitNoteForm({
+                                  clientInfo: debit.clientInfo || '',
+                                  operatorInfo: debit.operatorInfo || '',
+                                  idCode: debit.idCode || '',
+                                  origin: debit.origin || 'China',
+                                  shipMode: debit.shipMode || 'AIR',
+                                  priceType: debit.priceType || 'FREIGHT_AND_DUTY',
+                                });
+                                setDebitItems(debit.items || []);
+                                setTimeout(() => {
+                                  gerarDebitNotePDF();
+                                }, 300);
+                              }}
+                              className="flex-1 md:flex-none btn-modern-outline !py-2 !px-4 !text-[10px] flex items-center justify-center gap-2"
+                            >
+                              <Download size={14} /> PDF
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )
                 )}
               </div>
             </motion.div>
@@ -2010,26 +2211,41 @@ function AppContent() {
                     <div className="flex flex-col gap-2">
                       <div className="flex gap-4">
                         <label className="flex items-center gap-2 cursor-pointer">
-                          <input type="radio" value="AIR" checked={debitNoteForm.shipMode === 'AIR'} onChange={() => setDebitNoteForm({...debitNoteForm, shipMode: 'AIR', priceType: 'FREIGHT_AND_DUTY'})} className="accent-corp-blue" />
+                          <input type="radio" value="AIR" checked={debitNoteForm.shipMode === 'AIR'} onChange={() => {
+                            setDebitNoteForm({...debitNoteForm, shipMode: 'AIR', priceType: 'FREIGHT_AND_DUTY'});
+                            setDebitItems(debitItems.map(item => ({ ...item, unitType: 'KG' })));
+                          }} className="accent-corp-blue" />
                           <span className="text-sm font-semibold">Aéreo (KG)</span>
                         </label>
                         <label className="flex items-center gap-2 cursor-pointer">
-                          <input type="radio" value="SEA" checked={debitNoteForm.shipMode === 'SEA'} onChange={() => setDebitNoteForm({...debitNoteForm, shipMode: 'SEA'})} className="accent-corp-blue" />
+                          <input type="radio" value="SEA" checked={debitNoteForm.shipMode === 'SEA'} onChange={() => {
+                            setDebitNoteForm({...debitNoteForm, shipMode: 'SEA', priceType: 'FREIGHT_AND_DUTY'});
+                            setDebitItems(debitItems.map(item => ({ ...item, unitPrice: '21450', unitType: 'CBM' })));
+                          }} className="accent-corp-blue" />
                           <span className="text-sm font-semibold">Marítimo (CBM)</span>
                         </label>
                       </div>
                       {debitNoteForm.shipMode === 'SEA' && (
                         <div className="flex items-center gap-4 mt-2 bg-slate-100 p-2 rounded-lg border border-slate-200">
                            <label className="flex items-center gap-2 cursor-pointer">
-                             <input type="radio" value="FREIGHT_ONLY" checked={debitNoteForm.priceType === 'FREIGHT_ONLY'} onChange={() => setDebitNoteForm({...debitNoteForm, priceType: 'FREIGHT_ONLY'})} className="accent-corp-blue" />
+                             <input type="radio" value="FREIGHT_ONLY" checked={debitNoteForm.priceType === 'FREIGHT_ONLY'} onChange={() => {
+                               setDebitNoteForm({...debitNoteForm, priceType: 'FREIGHT_ONLY'});
+                               setDebitItems(debitItems.map(item => ({ ...item, unitPrice: '11800' })));
+                             }} className="accent-corp-blue" />
                              <span className="text-xs text-slate-600 font-bold">Apenas Frete</span>
                            </label>
                            <label className="flex items-center gap-2 cursor-pointer">
-                             <input type="radio" value="DUTY_ONLY" checked={debitNoteForm.priceType === 'DUTY_ONLY'} onChange={() => setDebitNoteForm({...debitNoteForm, priceType: 'DUTY_ONLY'})} className="accent-corp-blue" />
+                             <input type="radio" value="DUTY_ONLY" checked={debitNoteForm.priceType === 'DUTY_ONLY'} onChange={() => {
+                               setDebitNoteForm({...debitNoteForm, priceType: 'DUTY_ONLY'});
+                               setDebitItems(debitItems.map(item => ({ ...item, unitPrice: '9800' })));
+                             }} className="accent-corp-blue" />
                              <span className="text-xs text-slate-600 font-bold">Apenas Taxas</span>
                            </label>
                             <label className="flex items-center gap-2 cursor-pointer">
-                             <input type="radio" value="FREIGHT_AND_DUTY" checked={debitNoteForm.priceType === 'FREIGHT_AND_DUTY'} onChange={() => setDebitNoteForm({...debitNoteForm, priceType: 'FREIGHT_AND_DUTY'})} className="accent-corp-blue" />
+                             <input type="radio" value="FREIGHT_AND_DUTY" checked={debitNoteForm.priceType === 'FREIGHT_AND_DUTY'} onChange={() => {
+                               setDebitNoteForm({...debitNoteForm, priceType: 'FREIGHT_AND_DUTY'});
+                               setDebitItems(debitItems.map(item => ({ ...item, unitPrice: '21450' })));
+                             }} className="accent-corp-blue" />
                              <span className="text-xs text-slate-600 font-bold">Frete e Taxas</span>
                            </label>
                         </div>
@@ -2042,7 +2258,24 @@ function AppContent() {
                   <div className="flex items-center justify-between">
                      <h4 className="font-heading font-bold text-sm text-slate-900 border-l-4 border-corp-blue pl-2 tracking-widest uppercase">Itens da Carga</h4>
                      <button
-                        onClick={() => setDebitItems([...debitItems, { id: Date.now().toString(), orderNumber: '', cargoDescription: '', pkgs: 1, actualAmount: '', chargeableAmount: '', unitPrice: '', unitType: debitNoteForm.shipMode === 'AIR' ? 'KG' : 'CBM' }])}
+                        onClick={() => {
+                          let defaultPrice = '';
+                          if (debitNoteForm.shipMode === 'SEA') {
+                             if (debitNoteForm.priceType === 'FREIGHT_ONLY') defaultPrice = '11800';
+                             else if (debitNoteForm.priceType === 'DUTY_ONLY') defaultPrice = '9800';
+                             else if (debitNoteForm.priceType === 'FREIGHT_AND_DUTY') defaultPrice = '21450';
+                          }
+                          setDebitItems([...debitItems, { 
+                            id: Date.now().toString(), 
+                            orderNumber: '', 
+                            cargoDescription: '', 
+                            pkgs: 1, 
+                            actualAmount: '', 
+                            chargeableAmount: '', 
+                            unitPrice: defaultPrice, 
+                            unitType: debitNoteForm.shipMode === 'AIR' ? 'KG' : 'CBM' 
+                          }]);
+                        }}
                         className="text-xs font-bold text-corp-blue hover:text-corp-blue-light transition-colors border border-corp-blue/30 px-3 py-1.5 rounded-lg flex items-center gap-2"
                      >
                        + Adicionar Item
@@ -2356,8 +2589,11 @@ function AppContent() {
               <p className="text-xl font-bold text-[#1e293b] uppercase">{tipoTransporte}</p>
             </div>
             <div className="bg-[#f8fafc] rounded-xl p-6 border border-[#f1f5f9]">
-              <p className="text-[10px] font-bold text-[#94a3b8] uppercase tracking-widest mb-2">Volume & Peso Total</p>
-              <p className="text-xl font-bold text-[#1e293b]">{results.cbmFaturado.toFixed(4)} m³ / {results.pesoFaturado.toFixed(2)} kg</p>
+              <p className="text-[10px] font-bold text-[#94a3b8] uppercase tracking-widest mb-2">{tipoTransporte === 'maritimo' ? 'Volume & Peso Total' : 'Peso Total'}</p>
+              <p className="text-xl font-bold text-[#1e293b]">
+                {tipoTransporte === 'maritimo' ? `${results.cbmFaturado.toFixed(4)} m³ / ` : ''}
+                {results.pesoFaturado.toFixed(2)} kg
+              </p>
             </div>
           </div>
 
@@ -2420,10 +2656,37 @@ function AppContent() {
                   <span>Taxa de Levantamento:</span>
                   <span className="font-bold text-[#0f172a]">{moeda} {formatoMoeda(results.taxaLevantamento)}</span>
                 </div>
-                <div className="flex justify-between">
-                  <span>Logística & Aduana (Est.):</span>
-                  <span className="font-bold text-[#0f172a]">{moeda} {formatoMoeda(results.custosEnvio)}</span>
-                </div>
+                {tipoTransporte === 'maritimo' ? (
+                  <>
+                    <div className="flex justify-between">
+                      <span>Frete Internacional Marítimo:</span>
+                      <span className="font-bold text-[#0f172a]">{moeda} {formatoMoeda(results.valorFreteInt)}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Despacho Aduaneiro:</span>
+                      <span className="font-bold text-[#0f172a]">{moeda} {formatoMoeda(results.valorDespacho)}</span>
+                    </div>
+                    {results.valorEnvioLocal > 0 && (
+                      <div className="flex justify-between">
+                        <span>Taxa de Envio Local:</span>
+                        <span className="font-bold text-[#0f172a]">{moeda} {formatoMoeda(results.valorEnvioLocal)}</span>
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <div className="flex justify-between">
+                      <span>Frete & Despacho Aéreo (Est.):</span>
+                      <span className="font-bold text-[#0f172a]">{moeda} {formatoMoeda(results.valorFreteInt)}</span>
+                    </div>
+                    {results.valorEnvioLocal > 0 && (
+                      <div className="flex justify-between">
+                        <span>Taxa de Envio Local:</span>
+                        <span className="font-bold text-[#0f172a]">{moeda} {formatoMoeda(results.valorEnvioLocal)}</span>
+                      </div>
+                    )}
+                  </>
+                )}
               </div>
               <div className="bg-[#1A284F] text-[#ffffff] p-6 rounded-xl flex justify-between items-center">
                 <span className="font-bold uppercase tracking-widest text-xs">Total Estimado</span>
