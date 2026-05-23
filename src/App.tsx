@@ -30,7 +30,11 @@ import {
   FileText,
   Edit,
   Download,
-  Eye
+  Eye,
+  PlayCircle,
+  Youtube,
+  ArrowUp,
+  ArrowDown
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -178,13 +182,15 @@ interface Product {
   descricao: string;
   imageUrl?: string;
   categoriaAerea?: string;
-  valorUnitario: number;
-  taxaEnvioFornecedor: number;
-  quantidade: number;
-  comprimento: number;
-  largura: number;
-  altura: number;
-  pesoUnitario: number;
+  valorUnitario: number | string;
+  taxaEnvioFornecedor: number | string;
+  quantidade: number | string;
+  quantidadeCaixas?: number | string;
+  comprimento: number | string;
+  largura: number | string;
+  altura: number | string;
+  cbmUnitario?: number | string;
+  pesoUnitario: number | string;
 }
 
 interface CalculationResult {
@@ -205,6 +211,47 @@ interface CalculationResult {
 
 // --- Components ---
 
+const LevelBars = ({ level, shrink }: { level?: string; shrink?: boolean }) => {
+  const getLevelConfig = () => {
+    switch (level?.toLowerCase()) {
+      case 'iniciante': return { active: 1, label: 'Iniciante' };
+      case 'intermediário': return { active: 2, label: 'Intermediário' };
+      case 'avançado': return { active: 3, label: 'Avançado' };
+      default: return { active: 1, label: level || 'Iniciante' };
+    }
+  };
+  const config = getLevelConfig();
+  
+  if (shrink) {
+    return (
+      <div className="flex gap-[2px] items-end pb-[1px]" title={config.label}>
+        {[1, 2, 3].map((bar) => (
+          <div 
+            key={bar}
+            className={`w-[4px] rounded-t-[1px] transition-all ${bar <= config.active ? 'bg-sky-400' : 'bg-slate-300 opacity-50'} ${bar === 1 ? 'h-1.5' : bar === 2 ? 'h-2.5' : 'h-3.5'}`}
+          />
+        ))}
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2 bg-blue-50/80 px-2 py-0.5 rounded-md border border-blue-100/50" title={config.label}>
+      <div className="flex gap-[2px] items-end pb-[2px]">
+        {[1, 2, 3].map((bar) => (
+          <div 
+            key={bar}
+            className={`w-[5px] rounded-t-[2px] transition-all ${bar <= config.active ? 'bg-corp-blue' : 'bg-blue-200'} ${bar === 1 ? 'h-2' : bar === 2 ? 'h-3' : 'h-4'}`}
+          />
+        ))}
+      </div>
+      <span className="text-[10px] font-bold text-corp-blue uppercase tracking-wider">
+        {config.label}
+      </span>
+    </div>
+  );
+};
+
 export default function App() {
   return (
     <ErrorBoundary>
@@ -213,10 +260,84 @@ export default function App() {
   );
 }
 
+interface Lesson {
+  id: string;
+  title: string;
+  duration: string;
+  youtubeId: string;
+  description: string;
+  module: string;
+  level: string;
+}
+
 function AppContent() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [activeView, setActiveView] = useState<'landing' | 'cursos'>('landing');
+
+  const navigateTo = (view: 'landing' | 'cursos', id?: string) => {
+    setActiveView(view);
+    setIsMenuOpen(false);
+    if (view === 'cursos') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    } else if (id) {
+      setTimeout(() => {
+        const element = document.getElementById(id);
+        if (element) {
+          element.scrollIntoView({ behavior: 'smooth' });
+        }
+      }, 100);
+    }
+  };
+
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const isAdmin = user?.email === 'fabitoliuia7@gmail.com';
+  
+  const [lessons, setLessons] = useState<Lesson[]>([
+    { id: '1', title: "Introdução à Importação", duration: "12:45", youtubeId: "iBY6EDSjEF4", description: "Esta é a aula inaugural do nosso curso de importação. Aqui, você aprenderá os passos fundamentais para realizar suas primeiras negociações com fornecedores internacionais, entender os modais de transporte e prever custos ocultos.", module: "Módulo 1", level: "Iniciantes" },
+    { id: '2', title: "Como Encontrar Fornecedores Confiáveis", duration: "18:20", youtubeId: "jfKfPfyJRdk", description: "Aprenda a pesquisar.", module: "Módulo 1", level: "Iniciantes" },
+    { id: '3', title: "Cálculo de Custos e Impostos", duration: "24:10", youtubeId: "jfKfPfyJRdk", description: "Entenda os custos.", module: "Módulo 2", level: "Intermediário" },
+    { id: '4', title: "Modais de Transporte: Aéreo vs Marítimo", duration: "15:30", youtubeId: "jfKfPfyJRdk", description: "Descubra o melhor formato.", module: "Módulo 2", level: "Básico" },
+    { id: '5', title: "Documentação de Importação", duration: "20:05", youtubeId: "jfKfPfyJRdk", description: "Papelada necessária.", module: "Módulo 3", level: "Avançado" },
+    { id: '6', title: "Desembaraço Aduaneiro Simplificado", duration: "19:50", youtubeId: "jfKfPfyJRdk", description: "Aduana de forma simples.", module: "Módulo 3", level: "Avançado" }
+  ]);
+  const [activeLessonIndex, setActiveLessonIndex] = useState(0);
+  const [showAdminCourse, setShowAdminCourse] = useState(false);
+  const [isSavingCourse, setIsSavingCourse] = useState(false);
+
+  const [completedLessons, setCompletedLessons] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('completed_lessons');
+      return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+      return [];
+    }
+  });
+
+  const toggleLessonCompletion = (lessonId: string) => {
+    const updated = completedLessons.includes(lessonId) 
+      ? completedLessons.filter(id => id !== lessonId)
+      : [...completedLessons, lessonId];
+    setCompletedLessons(updated);
+    localStorage.setItem('completed_lessons', JSON.stringify(updated));
+  };
+
+  const [lessonNotes, setLessonNotes] = useState<{[key: string]: string}>(() => {
+    try {
+      const saved = localStorage.getItem('lesson_notes');
+      return saved ? JSON.parse(saved) : {};
+    } catch (e) {
+      return {};
+    }
+  });
+
+  const saveLessonNote = (lessonId: string, note: string) => {
+    const updated = { ...lessonNotes, [lessonId]: note };
+    setLessonNotes(updated);
+    localStorage.setItem('lesson_notes', JSON.stringify(updated));
+  };
+
+  const [courseSearch, setCourseSearch] = useState('');
+
   const [isAuthReady, setIsAuthReady] = useState(false);
   const [savedQuotes, setSavedQuotes] = useState<any[]>([]);
   const [savedDebitNotes, setSavedDebitNotes] = useState<any[]>([]);
@@ -239,19 +360,19 @@ function AppContent() {
   const [isSaving, setIsSaving] = useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
   const [moeda, setMoeda] = useState('USD');
-  const [taxaCambio, setTaxaCambio] = useState(64);
+  const [taxaCambio, setTaxaCambio] = useState<number | string>(64);
   const [nomeCliente, setNomeCliente] = useState('');
-  const [taxaProcessamento, setTaxaProcessamento] = useState(0);
-  const [comissaoServicos, setComissaoServicos] = useState(0);
-  const [taxaLevantamento, setTaxaLevantamento] = useState(0);
+  const [taxaProcessamento, setTaxaProcessamento] = useState<number | string>(0);
+  const [comissaoServicos, setComissaoServicos] = useState<number | string>(0);
+  const [taxaLevantamento, setTaxaLevantamento] = useState<number | string>(0);
   const [tipoTransporte, setTipoTransporte] = useState('maritimo');
-  const [taxasAduaneiras, setTaxasAduaneiras] = useState(0);
-  const [freteInternacional, setFreteInternacional] = useState(0);
-  const [taxaEnvioLocal, setTaxaEnvioLocal] = useState(0);
+  const [taxasAduaneiras, setTaxasAduaneiras] = useState<number | string>(0);
+  const [freteInternacional, setFreteInternacional] = useState<number | string>(0);
+  const [taxaEnvioLocal, setTaxaEnvioLocal] = useState<number | string>(0);
   const [aplicarMargemSeguranca, setAplicarMargemSeguranca] = useState(false);
   const [calcularRevenda, setCalcularRevenda] = useState(false);
-  const [margemLucro, setMargemLucro] = useState(0);
-  const [custosAdicionais, setCustosAdicionais] = useState(0);
+  const [margemLucro, setMargemLucro] = useState<number | string>(0);
+  const [custosAdicionais, setCustosAdicionais] = useState<number | string>(0);
   
   // Tracking State
   const [trackingCode, setTrackingCode] = useState('');
@@ -382,9 +503,11 @@ function AppContent() {
       valorUnitario: 0,
       taxaEnvioFornecedor: 0,
       quantidade: 1,
+      quantidadeCaixas: '',
       comprimento: 0,
       largura: 0,
       altura: 0,
+      cbmUnitario: '',
       pesoUnitario: 0
     }
   ]);
@@ -411,6 +534,37 @@ function AppContent() {
     }
     testConnection();
   }, []);
+
+  useEffect(() => {
+    async function loadCourses() {
+      try {
+        const docRef = doc(db, 'settings', 'courses');
+        const docSnap = await getDoc(docRef);
+        if (docSnap.exists() && docSnap.data().lessons) {
+          setLessons(docSnap.data().lessons);
+        }
+      } catch(e) {
+        console.error("Erro ao carregar cursos:", e);
+        handleFirestoreError(e, OperationType.GET, 'settings/courses');
+      }
+    }
+    loadCourses();
+  }, []);
+
+  const handleSaveCourses = async (updatedLessons: Lesson[]) => {
+    setIsSavingCourse(true);
+    try {
+      await setDoc(doc(db, 'settings', 'courses'), { lessons: updatedLessons });
+      setLessons(updatedLessons);
+      setShowAdminCourse(false);
+      alert('Cursos salvos com sucesso!');
+    } catch(e) {
+      console.error(e);
+      handleFirestoreError(e, OperationType.WRITE, 'settings/courses');
+    } finally {
+      setIsSavingCourse(false);
+    }
+  };
 
   useEffect(() => {
     if (!user || !isAuthReady) {
@@ -508,10 +662,12 @@ function AppContent() {
           categoriaAerea: p.categoriaAerea || 'normal',
           valorUnitario: p.valorUnitario,
           quantidade: p.quantidade,
+          quantidadeCaixas: p.quantidadeCaixas ?? '',
           taxaEnvioFornecedor: p.taxaEnvioFornecedor,
           comprimento: p.comprimento,
           largura: p.largura,
           altura: p.altura,
+          cbmUnitario: p.cbmUnitario || '',
           pesoUnitario: p.pesoUnitario
         })),
         createdAt: Timestamp.now()
@@ -560,8 +716,13 @@ function AppContent() {
     produtos.forEach(p => {
       const qtd = Number(p.quantidade) || 0;
       subtotalProdutos += (Number(p.valorUnitario) || 0) * qtd + (Number(p.taxaEnvioFornecedor) || 0);
-      const cbmUnit = (Number(p.comprimento) || 0) * (Number(p.largura) || 0) * (Number(p.altura) || 0) / 1000000;
-      cbmTotal += cbmUnit * qtd * (aplicarMargemSeguranca ? 1.2 : 1);
+      const vols = (p.quantidadeCaixas !== undefined && p.quantidadeCaixas !== '') 
+        ? Number(p.quantidadeCaixas) 
+        : qtd;
+      const cbmUnit = (Number(p.cbmUnitario) || 0) > 0 
+        ? Number(p.cbmUnitario) 
+        : (Number(p.comprimento) || 0) * (Number(p.largura) || 0) * (Number(p.altura) || 0) / 1000000;
+      cbmTotal += cbmUnit * vols * (aplicarMargemSeguranca ? 1.2 : 1);
       pesoTotal += (Number(p.pesoUnitario) || 0) * qtd;
     });
 
@@ -672,9 +833,11 @@ function AppContent() {
         valorUnitario: 0,
         taxaEnvioFornecedor: 0,
         quantidade: 1,
+        quantidadeCaixas: '',
         comprimento: 0,
         largura: 0,
         altura: 0,
+        cbmUnitario: '',
         pesoUnitario: 0
       }
     ]);
@@ -699,9 +862,11 @@ function AppContent() {
         valorUnitario: 0,
         taxaEnvioFornecedor: 0,
         quantidade: 1,
+        quantidadeCaixas: '',
         comprimento: 0,
         largura: 0,
         altura: 0,
+        cbmUnitario: '',
         pesoUnitario: 0
       }]);
       setNomeCliente('');
@@ -944,25 +1109,32 @@ function AppContent() {
       {/* Navigation */}
       <nav className="bg-white/90 backdrop-blur-md border-b border-slate-200 py-5 px-6 sticky top-0 z-40 no-print">
         <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <a href="#" className="flex items-center gap-4">
+          <button onClick={() => navigateTo('landing', 'inicio')} className="flex items-center gap-4 focus:outline-none">
             <img 
               src="https://files.manuscdn.com/user_upload_by_module/session_file/310419663028416962/glYQVTOtGErYGBoj.jpg" 
               alt="PrimeWay Logo" 
-              className="h-12 w-auto object-contain"
+              className="h-12 w-auto object-contain transition-transform duration-300 hover:scale-105 hover:opacity-90 cursor-pointer"
               referrerPolicy="no-referrer"
             />
-          </a>
+          </button>
           
           <div className="hidden md:flex items-center gap-10">
-            {['Início', 'A Empresa', 'Serviços', 'Rastreio'].map((item) => (
-              <a 
-                key={item} 
-                href={`#${item.toLowerCase().replace(' ', '-')}`} 
-                className="text-xs font-semibold text-slate-600 hover:text-corp-blue uppercase tracking-widest transition-colors"
-              >
-                {item}
-              </a>
-            ))}
+            {['Início', 'A Empresa', 'Serviços', 'Cursos', 'Rastreio'].map((item) => {
+              const targetId = item.toLowerCase().replace(' ', '-');
+              const isCursosTab = item === 'Cursos';
+              const isActive = (activeView === 'cursos' && isCursosTab) || (activeView === 'landing' && !isCursosTab && window.location.hash === `#${targetId}`);
+              return (
+                <button 
+                  key={item} 
+                  onClick={() => navigateTo(isCursosTab ? 'cursos' : 'landing', targetId)}
+                  className={`text-xs font-semibold uppercase tracking-widest transition-colors focus:outline-none ${
+                    isActive ? 'text-corp-orange font-bold scale-102' : 'text-slate-600 hover:text-corp-blue'
+                  }`}
+                >
+                  {item}
+                </button>
+              );
+            })}
             
             {isAuthReady && (
               user ? (
@@ -996,9 +1168,12 @@ function AppContent() {
               )
             )}
 
-            <a href="#simulador" className="btn-modern-primary !py-3 !px-6 !text-[11px]">
+            <button 
+              onClick={() => navigateTo('landing', 'simulador')}
+              className="btn-modern-primary !py-3 !px-6 !text-[11px]"
+            >
               Cotação Online
-            </a>
+            </button>
           </div>
 
           <button className="md:hidden text-corp-blue" onClick={() => setIsMenuOpen(!isMenuOpen)}>
@@ -1015,16 +1190,22 @@ function AppContent() {
               exit={{ opacity: 0, y: -20 }}
               className="absolute top-full left-0 w-full bg-white border-b border-gray-200 p-6 flex flex-col gap-4 md:hidden shadow-xl"
             >
-              {['Início', 'A Empresa', 'Serviços', 'Rastreio'].map((item) => (
-                <a 
-                  key={item} 
-                  href={`#${item.toLowerCase().replace(' ', '-')}`} 
-                  className="text-sm font-semibold text-corp-blue uppercase tracking-widest"
-                  onClick={() => setIsMenuOpen(false)}
-                >
-                  {item}
-                </a>
-              ))}
+              {['Início', 'A Empresa', 'Serviços', 'Cursos', 'Rastreio'].map((item) => {
+                const targetId = item.toLowerCase().replace(' ', '-');
+                const isCursosTab = item === 'Cursos';
+                const isActive = (activeView === 'cursos' && isCursosTab) || (activeView === 'landing' && !isCursosTab && window.location.hash === `#${targetId}`);
+                return (
+                  <button 
+                    key={item} 
+                    onClick={() => navigateTo(isCursosTab ? 'cursos' : 'landing', targetId)}
+                    className={`text-left text-sm font-semibold uppercase tracking-widest ${
+                      isActive ? 'text-corp-orange font-bold' : 'text-corp-blue hover:text-corp-blue-light'
+                    }`}
+                  >
+                    {item}
+                  </button>
+                );
+              })}
 
               {isAuthReady && (
                 user ? (
@@ -1068,20 +1249,21 @@ function AppContent() {
                 )
               )}
 
-              <a 
-                href="#simulador" 
-                className="bg-corp-accent text-white text-sm font-semibold px-6 py-4 uppercase tracking-widest text-center rounded-sm"
-                onClick={() => setIsMenuOpen(false)}
+              <button 
+                onClick={() => navigateTo('landing', 'simulador')}
+                className="bg-corp-accent text-white text-sm font-semibold px-6 py-4 uppercase tracking-widest text-center rounded-sm w-full"
               >
                 Cotação Online
-              </a>
+              </button>
             </motion.div>
           )}
         </AnimatePresence>
       </nav>
 
-      {/* Hero Section */}
-      <header id="inicio" className="relative bg-slate-900 text-white min-h-[60vh] md:min-h-[80vh] flex items-center px-6 overflow-hidden no-print">
+      {activeView === 'landing' ? (
+        <>
+          {/* Hero Section */}
+          <header id="inicio" className="relative bg-slate-900 text-white min-h-[60vh] md:min-h-[80vh] flex items-center px-6 overflow-hidden no-print">
         <div className="absolute inset-0">
           <motion.video 
             autoPlay 
@@ -1234,6 +1416,9 @@ function AppContent() {
         </div>
       </section>
 
+
+      {/* Cursos section moved to dedicated Classroom view */}
+
       {/* Rastreio Section */}
       <section id="rastreio" className="py-12 md:py-20 px-6 bg-slate-50 no-print">
         <div className="max-w-3xl mx-auto">
@@ -1368,9 +1553,9 @@ function AppContent() {
                   <div>
                     <label className="label-corp">Taxa {moeda}/MZN</label>
                     <input 
-                      type="number" 
+                      type="number" step="any"
                       value={taxaCambio || ''} 
-                      onChange={(e) => setTaxaCambio(Number(e.target.value))}
+                      onChange={(e) => setTaxaCambio(e.target.value)}
                       className="input-modern font-semibold !py-2.5 !px-3 text-xs" 
                     />
                   </div>
@@ -1378,27 +1563,27 @@ function AppContent() {
                 <div>
                   <label className="label-corp">Taxa Proc. %</label>
                   <input 
-                    type="number" 
+                    type="number" step="any"
                     value={taxaProcessamento || ''} 
-                    onChange={(e) => setTaxaProcessamento(Number(e.target.value))}
+                    onChange={(e) => setTaxaProcessamento(e.target.value)}
                     className="input-modern !py-2.5 !px-3 text-xs" 
                   />
                 </div>
                 <div>
                   <label className="label-corp">Comissão %</label>
                   <input 
-                    type="number" 
+                    type="number" step="any"
                     value={comissaoServicos || ''} 
-                    onChange={(e) => setComissaoServicos(Number(e.target.value))}
+                    onChange={(e) => setComissaoServicos(e.target.value)}
                     className="input-modern !py-2.5 !px-3 text-xs" 
                   />
                 </div>
                 <div>
                   <label className="label-corp">Armazém</label>
                   <input 
-                    type="number" 
+                    type="number" step="any"
                     value={taxaLevantamento || ''} 
-                    onChange={(e) => setTaxaLevantamento(Number(e.target.value))}
+                    onChange={(e) => setTaxaLevantamento(e.target.value)}
                     className="input-modern !py-2.5 !px-3 text-xs" 
                   />
                 </div>
@@ -1443,36 +1628,36 @@ function AppContent() {
                       <div className="col-span-1 md:col-span-2">
                         <label className="label-corp">Valor</label>
                         <input 
-                          type="number" 
+                          type="number" step="any"
                           value={p.valorUnitario || ''} 
-                          onChange={(e) => atualizarProduto(p.id, 'valorUnitario', Number(e.target.value))}
+                          onChange={(e) => atualizarProduto(p.id, 'valorUnitario', e.target.value)}
                           className="input-modern !py-2.5 !px-3 text-xs" 
                         />
                       </div>
                       <div className="col-span-1 md:col-span-2">
                         <label className="label-corp">Qtd.</label>
                         <input 
-                          type="number" 
+                          type="number" step="any"
                           value={p.quantidade} 
-                          onChange={(e) => atualizarProduto(p.id, 'quantidade', Number(e.target.value))}
+                          onChange={(e) => atualizarProduto(p.id, 'quantidade', e.target.value)}
                           className="input-modern !py-2.5 !px-3 text-xs" 
                         />
                       </div>
                       <div className="col-span-1 md:col-span-2">
                         <label className="label-corp">Frete F.</label>
                         <input 
-                          type="number" 
+                          type="number" step="any"
                           value={p.taxaEnvioFornecedor || ''} 
-                          onChange={(e) => atualizarProduto(p.id, 'taxaEnvioFornecedor', Number(e.target.value))}
+                          onChange={(e) => atualizarProduto(p.id, 'taxaEnvioFornecedor', e.target.value)}
                           className="input-modern !py-2.5 !px-3 text-xs" 
                         />
                       </div>
                       <div className="col-span-1 md:col-span-2">
                         <label className="label-corp">Peso</label>
                         <input 
-                          type="number" 
+                          type="number" step="any"
                           value={p.pesoUnitario || ''} 
-                          onChange={(e) => atualizarProduto(p.id, 'pesoUnitario', Number(e.target.value))}
+                          onChange={(e) => atualizarProduto(p.id, 'pesoUnitario', e.target.value)}
                           className="input-modern !py-2.5 !px-3 text-xs" 
                         />
                       </div>
@@ -1509,33 +1694,70 @@ function AppContent() {
                     {tipoTransporte === 'maritimo' && (
                       <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
                         <div className="flex flex-col md:flex-row md:items-center gap-4">
-                          <label className="label-corp !text-corp-blue-light !mb-0 shrink-0">Dimensões (cm)</label>
-                          <div className="grid grid-cols-3 gap-3 flex-1">
+                          <label className="label-corp !text-corp-blue-light !mb-0 shrink-0">Dimensões & Vol</label>
+                          <div className="grid grid-cols-5 gap-3 flex-1">
+                            <div className="relative" title="Quantidade de pacotes/caixas. Se vazio, usa a Quantidade de Itens.">
+                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[8px] font-bold text-slate-400 uppercase">VOLS</span>
+                              <input 
+                                type="number" step="any"
+                                value={p.quantidadeCaixas !== undefined ? p.quantidadeCaixas : ''} 
+                                onChange={(e) => atualizarProduto(p.id, 'quantidadeCaixas', e.target.value)}
+                                className="input-modern !bg-slate-50 !py-2.5 !pl-9 !pr-2 text-xs font-semibold" 
+                                placeholder={String(p.quantidade || 1)}
+                              />
+                            </div>
                             <div className="relative">
                               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[8px] font-bold text-slate-300 uppercase">C</span>
                               <input 
-                                type="number" 
+                                type="number" step="any"
                                 value={p.comprimento || ''} 
-                                onChange={(e) => atualizarProduto(p.id, 'comprimento', Number(e.target.value))}
+                                onChange={(e) => {
+                                  atualizarProduto(p.id, 'comprimento', e.target.value);
+                                  atualizarProduto(p.id, 'cbmUnitario', '');
+                                }}
                                 className="input-modern !bg-slate-50 !py-2.5 !pl-6 !pr-2 text-xs" 
+                                placeholder="0"
                               />
                             </div>
                             <div className="relative">
                               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[8px] font-bold text-slate-300 uppercase">L</span>
                               <input 
-                                type="number" 
+                                type="number" step="any"
                                 value={p.largura || ''} 
-                                onChange={(e) => atualizarProduto(p.id, 'largura', Number(e.target.value))}
+                                onChange={(e) => {
+                                  atualizarProduto(p.id, 'largura', e.target.value);
+                                  atualizarProduto(p.id, 'cbmUnitario', '');
+                                }}
                                 className="input-modern !bg-slate-50 !py-2.5 !pl-6 !pr-2 text-xs" 
+                                placeholder="0"
                               />
                             </div>
                             <div className="relative">
                               <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[8px] font-bold text-slate-300 uppercase">A</span>
                               <input 
-                                type="number" 
+                                type="number" step="any"
                                 value={p.altura || ''} 
-                                onChange={(e) => atualizarProduto(p.id, 'altura', Number(e.target.value))}
+                                onChange={(e) => {
+                                  atualizarProduto(p.id, 'altura', e.target.value);
+                                  atualizarProduto(p.id, 'cbmUnitario', '');
+                                }}
                                 className="input-modern !bg-slate-50 !py-2.5 !pl-6 !pr-2 text-xs" 
+                                placeholder="0"
+                              />
+                            </div>
+                            <div className="relative">
+                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[8px] font-bold text-slate-400 uppercase">CBM</span>
+                              <input 
+                                type="number" step="any"
+                                value={p.cbmUnitario || ''} 
+                                onChange={(e) => {
+                                  atualizarProduto(p.id, 'cbmUnitario', e.target.value);
+                                  atualizarProduto(p.id, 'comprimento', '');
+                                  atualizarProduto(p.id, 'largura', '');
+                                  atualizarProduto(p.id, 'altura', '');
+                                }}
+                                className="input-modern !bg-blue-50/50 border-blue-200 !py-2.5 !pl-9 !pr-2 text-xs font-bold text-blue-700 placeholder:text-blue-300" 
+                                placeholder="Unid."
                               />
                             </div>
                           </div>
@@ -1578,18 +1800,18 @@ function AppContent() {
                     <div>
                       <label className="label-corp">Despacho</label>
                       <input 
-                        type="number" 
+                        type="number" step="any"
                         value={taxasAduaneiras || ''} 
-                        onChange={(e) => setTaxasAduaneiras(Number(e.target.value))}
+                        onChange={(e) => setTaxasAduaneiras(e.target.value)}
                         className="input-modern !py-2.5 !px-3 text-xs" 
                       />
                     </div>
                     <div>
                       <label className="label-corp">Frete Int.</label>
                       <input 
-                        type="number" 
+                        type="number" step="any"
                         value={freteInternacional || ''} 
-                        onChange={(e) => setFreteInternacional(Number(e.target.value))}
+                        onChange={(e) => setFreteInternacional(e.target.value)}
                         className="input-modern !py-2.5 !px-3 text-xs" 
                       />
                     </div>
@@ -1598,9 +1820,9 @@ function AppContent() {
                 <div>
                   <label className="label-corp">Inland</label>
                   <input 
-                    type="number" 
+                    type="number" step="any"
                     value={taxaEnvioLocal || ''} 
-                    onChange={(e) => setTaxaEnvioLocal(Number(e.target.value))}
+                    onChange={(e) => setTaxaEnvioLocal(e.target.value)}
                     className="input-modern !py-2.5 !px-3 text-xs" 
                   />
                 </div>
@@ -1708,9 +1930,9 @@ function AppContent() {
                       <div>
                         <label className="label-corp">Margem de Lucro (%)</label>
                         <input 
-                          type="number" 
+                          type="number" step="any"
                           value={margemLucro || ''} 
-                          onChange={(e) => setMargemLucro(Number(e.target.value))}
+                          onChange={(e) => setMargemLucro(e.target.value)}
                           className="input-modern" 
                           placeholder="0" 
                         />
@@ -1718,9 +1940,9 @@ function AppContent() {
                       <div>
                         <label className="label-corp">Custos Extras Locais ({moeda})</label>
                         <input 
-                          type="number" 
+                          type="number" step="any"
                           value={custosAdicionais || ''} 
-                          onChange={(e) => setCustosAdicionais(Number(e.target.value))}
+                          onChange={(e) => setCustosAdicionais(e.target.value)}
                           className="input-modern" 
                           placeholder="0.00" 
                         />
@@ -1733,7 +1955,467 @@ function AppContent() {
           </div>
         </div>
       </main>
+        </>
+      ) : (
+        <main className="flex-grow bg-slate-50 py-12 px-6">
+          <div className="max-w-7xl mx-auto">
+            {/* Classroom Header Banner */}
+            <div className="bg-gradient-to-r from-slate-900 via-[#1A284F] to-slate-900 rounded-3xl p-8 md:p-12 text-white mb-10 shadow-2xl relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+              <div className="absolute inset-0 bg-grid-white/[0.03] bg-[size:20px_20px] pointer-events-none" />
+              <div className="relative z-10 space-y-3 max-w-2xl">
+                <div className="flex items-center gap-3">
+                  <span className="bg-corp-orange text-white text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-widest animate-pulse">Academia PrimeWay</span>
+                  <span className="bg-white/10 text-slate-200 text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-widest">Portal do Aluno</span>
+                </div>
+                <h1 className="text-3xl md:text-5xl font-black tracking-tight leading-none text-white font-heading">
+                  CURSO DE IMPORTAÇÃO DA CHINA
+                </h1>
+                <p className="text-slate-300 text-sm md:text-base pr-4 leading-relaxed font-semibold">
+                  Aprenda como importar mercadorias com segurança direto da China e terceirizar seus embarques pelo Porto de Maputo e canais aduaneiros de Moçambique.
+                </p>
+                
+                {/* Statistics Tracker */}
+                <div className="pt-4 flex flex-wrap gap-6 items-center">
+                  <div className="space-y-1">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Progresso Concluído</span>
+                    <div className="flex items-center gap-3">
+                      <div className="w-32 bg-white/10 rounded-full h-2 overflow-hidden">
+                        <div 
+                          className="bg-corp-orange h-full rounded-full transition-all duration-500"
+                          style={{ width: `${lessons.length > 0 ? (completedLessons.length / lessons.length) * 100 : 0}%` }}
+                        />
+                      </div>
+                      <span className="text-sm font-bold font-mono text-white">
+                        {completedLessons.length}/{lessons.length} ({lessons.length > 0 ? Math.round((completedLessons.length / lessons.length) * 100) : 0}%)
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
 
+              <div className="relative z-10 flex flex-col sm:flex-row gap-3 md:self-end">
+                {isAdmin && (
+                  <button 
+                    onClick={() => setShowAdminCourse(true)}
+                    className="text-xs font-bold text-corp-orange hover:bg-corp-orange hover:text-white transition-all border border-corp-orange/40 px-5 py-3.5 rounded-xl flex items-center justify-center gap-2 bg-black/30"
+                  >
+                    <Edit size={14} /> Organizar Cursos
+                  </button>
+                )}
+                <button 
+                  onClick={() => navigateTo('landing', 'inicio')}
+                  className="text-xs font-bold text-slate-950 hover:bg-slate-200 transition-all px-5 py-3.5 rounded-xl flex items-center justify-center gap-2 bg-white shadow-lg"
+                >
+                  <X size={14} /> Voltar ao Início
+                </button>
+              </div>
+            </div>
+
+            {/* Course Playlist & Video Main Interface */}
+            {lessons.length > 0 ? (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+                
+                {/* Video Player & Notes Column */}
+                <div className="lg:col-span-2 space-y-8">
+                  <div className="bg-slate-900 rounded-3xl overflow-hidden aspect-video shadow-2xl relative border-4 border-[#1A284F]/10">
+                    {lessons[activeLessonIndex]?.youtubeId ? (
+                      <iframe 
+                        className="w-full h-full absolute top-0 left-0"
+                        src={`https://www.youtube.com/embed/${lessons[activeLessonIndex].youtubeId}`} 
+                        title="Aula Player" 
+                        frameBorder="0" 
+                        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" 
+                        referrerPolicy="strict-origin-when-cross-origin" 
+                        allowFullScreen
+                      ></iframe>
+                    ) : (
+                      <div className="w-full h-full flex flex-col items-center justify-center text-slate-500 gap-2">
+                        <Youtube size={48} className="text-slate-600 block" />
+                        <span>Vídeo não disponível para esta lição</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Lesson title and resources details */}
+                  <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm space-y-6">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-5">
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2.5">
+                          <span className="text-[10px] font-bold text-corp-orange uppercase tracking-wider bg-orange-100/50 px-2.5 py-1 rounded-md">
+                            {lessons[activeLessonIndex]?.module}
+                          </span>
+                          <LevelBars level={lessons[activeLessonIndex]?.level} />
+                          <span className="text-xs font-mono font-medium text-slate-400">
+                            Duração: {lessons[activeLessonIndex]?.duration}
+                          </span>
+                        </div>
+                        <h3 className="text-2xl md:text-3xl font-black text-[#1A284F] tracking-tight pt-1 leading-tight">
+                          {lessons[activeLessonIndex]?.title}
+                        </h3>
+                      </div>
+
+                      <button 
+                        onClick={() => toggleLessonCompletion(lessons[activeLessonIndex].id)}
+                        className={`px-5 py-3 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-2 border shadow-sm ${
+                          completedLessons.includes(lessons[activeLessonIndex].id)
+                            ? 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100/60'
+                            : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                        }`}
+                      >
+                        <ShieldCheck size={16} className={completedLessons.includes(lessons[activeLessonIndex].id) ? 'text-emerald-500' : 'text-slate-400'} />
+                        {completedLessons.includes(lessons[activeLessonIndex].id) ? 'Aula Concluída' : 'Marcar como Assistido'}
+                      </button>
+                    </div>
+
+                    <div className="space-y-4">
+                      <h4 className="font-bold text-[#1A284F] text-sm uppercase tracking-widest">Resumo do Conteúdo</h4>
+                      <p className="text-slate-600 leading-relaxed text-sm">
+                        {lessons[activeLessonIndex]?.description || 'Esta aula aborda estratégias essenciais de posicionamento, busca de fornecedores homologados e documentação de comércio marítimo relevante para Moçambique.'}
+                      </p>
+                    </div>
+
+                    {/* Rich Interactive Notes Section */}
+                    <div className="bg-slate-50 p-6 rounded-2xl space-y-4 border border-slate-100">
+                      <div className="flex justify-between items-center">
+                        <h4 className="font-bold text-[#1A284F] text-sm uppercase tracking-widest flex items-center gap-2">
+                          <Edit size={16} className="text-corp-orange" /> Minhas Anotações de Estudo
+                        </h4>
+                        <span className="text-[10px] uppercase font-bold text-slate-400 font-mono">
+                          Salvo no Navegador
+                        </span>
+                      </div>
+                      
+                      <textarea
+                        value={lessonNotes[lessons[activeLessonIndex]?.id || ''] || ''}
+                        onChange={(e) => saveLessonNote(lessons[activeLessonIndex].id, e.target.value)}
+                        placeholder="Escreva aqui suas observações sobre esta lição... (Ex: nomes de fornecedores, taxas calculadas, dicas de despacho...)"
+                        className="w-full h-32 p-4 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-corp-blue text-slate-700 placeholder-slate-400 resize-none font-medium leading-relaxed"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Playlist Sidebar */}
+                <div className="space-y-6">
+                  <div className="bg-white p-6 rounded-3xl border border-slate-100 shadow-sm space-y-4">
+                    <div className="space-y-3">
+                      <h4 className="font-bold text-lg text-[#1A284F] flex items-center gap-2">
+                        <PlayCircle className="w-5 h-5 text-corp-orange" /> Conteúdo Teórico e Prático
+                      </h4>
+
+                      {/* Course Lesson Search bar */}
+                      <div className="relative">
+                        <input 
+                          type="text" 
+                          value={courseSearch}
+                          onChange={(e) => setCourseSearch(e.target.value)}
+                          placeholder="Pesquisar aulas..."
+                          className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-slate-100 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-corp-blue text-slate-700"
+                        />
+                        <Search className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2.5 max-h-[600px] overflow-y-auto pr-1 custom-scrollbar">
+                      {lessons
+                        .filter(l => 
+                          l.title.toLowerCase().includes(courseSearch.toLowerCase()) || 
+                          l.description.toLowerCase().includes(courseSearch.toLowerCase())
+                        )
+                        .map((aula, idx) => {
+                          const realIndex = lessons.findIndex(l => l.id === aula.id);
+                          const isActive = realIndex === activeLessonIndex;
+                          const isCompleted = completedLessons.includes(aula.id);
+                          return (
+                            <div 
+                              key={aula.id} 
+                              onClick={() => {
+                                setActiveLessonIndex(realIndex);
+                                window.scrollTo({ top: 0, behavior: 'smooth' });
+                              }}
+                              className={`p-4 rounded-xl border cursor-pointer transition-all flex items-center gap-3 relative overflow-hidden group ${
+                                isActive 
+                                  ? 'bg-[#1A284F] text-white border-[#1A284F] shadow-md scale-[1.01]' 
+                                  : 'bg-white border-slate-100 text-slate-600 hover:bg-slate-50 hover:border-[#1A284F]/30'
+                              }`}
+                            >
+                              {/* Left status badge indicator */}
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  toggleLessonCompletion(aula.id);
+                                }}
+                                className="focus:outline-none shrink-0"
+                              >
+                                {isCompleted ? (
+                                  <ShieldCheck className="w-5 h-5 text-emerald-500 hover:scale-110 transition-transform" />
+                                ) : (
+                                  <div className={`w-5 h-5 rounded-full border-2 transition-transform hover:scale-110 ${isActive ? 'border-sky-300' : 'border-slate-300'}`} />
+                                )}
+                              </button>
+
+                              <div className="min-w-0 flex-grow">
+                                <span className={`flex items-center gap-2 text-[8px] font-bold uppercase tracking-wider mb-0.5 ${isActive ? 'text-sky-300' : 'text-slate-400'}`}>
+                                  <span>Aula {realIndex + 1} • {aula.module}</span>
+                                  <LevelBars level={aula.level} shrink={true} />
+                                </span>
+                                <h5 className="font-bold text-xs truncate leading-tight pr-4">
+                                  {aula.title}
+                                </h5>
+                              </div>
+                              
+                              <span className={`text-[10px] font-mono font-medium shrink-0 ${isActive ? 'text-sky-200' : 'text-slate-400'}`}>
+                                {aula.duration}
+                              </span>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </div>
+
+                  {/* Mozambique custom laws resources helper widget */}
+                  <div className="bg-slate-900 text-white p-6 rounded-3xl space-y-4 shadow-sm relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-corp-orange/10 rounded-full blur-xl pointer-events-none" />
+                    <h5 className="font-bold text-sm uppercase tracking-widest text-corp-orange">Links Recomendados</h5>
+                    <p className="text-xs text-slate-400 leading-relaxed">
+                      Ferramentas governamentais essenciais para aduanas e desembaraços em Moçambique:
+                    </p>
+                    <ul className="space-y-2 text-xs">
+                      <li>
+                        <a 
+                          href="https://www.at.gov.mz/por/Alfandeagas/Pauta-Aduaneira" 
+                          target="_blank" 
+                          rel="noreferrer" 
+                          className="hover:underline text-corp-blue-light font-bold flex items-center gap-1.5"
+                        >
+                          Pauta Aduaneira Maputo (AT)
+                        </a>
+                      </li>
+                      <li>
+                        <a 
+                          href="https://www.at.gov.mz/" 
+                          target="_blank" 
+                          rel="noreferrer" 
+                          className="hover:underline text-corp-blue-light font-bold flex items-center gap-1.5"
+                        >
+                          Autoridade Tributária de Moçambique
+                        </a>
+                      </li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="bg-white rounded-3xl p-12 text-center border border-slate-100 shadow-sm max-w-xl mx-auto space-y-4">
+                <PlayCircle className="w-12 h-12 text-slate-300 mx-auto" strokeWidth={1} />
+                <h4 className="font-bold text-slate-800 text-lg">Nenhuma aula cadastrada</h4>
+                <p className="text-sm text-slate-500">
+                  Volte mais tarde ou faça login como administrador para adicionar aulas.
+                </p>
+              </div>
+            )}
+          </div>
+        </main>
+      )}
+
+      {/* Admin Courses Modal */}
+      <AnimatePresence>
+        {showAdminCourse && isAdmin && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[60] flex items-center justify-center p-4 overflow-y-auto"
+          >
+            <div className="bg-white rounded-2xl w-full max-w-4xl min-h-[500px] flex flex-col my-8 relative overflow-hidden shadow-2xl">
+              <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-gray-50/50">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-corp-blue/10 flex items-center justify-center text-corp-blue">
+                    <Edit size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-xl font-bold text-[#1A284F]">Organizar Cursos</h3>
+                    <p className="text-sm text-slate-500">Adicione, edite ou remova aulas</p>
+                  </div>
+                </div>
+                <button onClick={() => setShowAdminCourse(false)} className="text-slate-400 hover:text-slate-600 bg-white p-2 rounded-full hover:bg-slate-100 transition-colors">
+                  <X size={20} />
+                </button>
+              </div>
+              
+              <div className="flex-1 p-6 overflow-y-auto bg-slate-50">
+                <div className="space-y-6">
+                  {lessons.map((lesson, idx) => (
+                    <div key={lesson.id} className="bg-white p-4 rounded-xl border border-slate-200 relative">
+                       <div className="absolute top-4 right-4 flex items-center gap-1.5">
+                         <button 
+                           onClick={() => {
+                             if (idx === 0) return;
+                             const newLessons = [...lessons];
+                             const temp = newLessons[idx - 1];
+                             newLessons[idx - 1] = newLessons[idx];
+                             newLessons[idx] = temp;
+                             setLessons(newLessons);
+                           }}
+                           disabled={idx === 0}
+                           className="text-slate-400 hover:text-corp-blue bg-slate-50 hover:bg-blue-50 p-1.5 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                           title="Mover para cima"
+                         >
+                           <ArrowUp size={16} />
+                         </button>
+                         <button 
+                           onClick={() => {
+                             if (idx === lessons.length - 1) return;
+                             const newLessons = [...lessons];
+                             const temp = newLessons[idx + 1];
+                             newLessons[idx + 1] = newLessons[idx];
+                             newLessons[idx] = temp;
+                             setLessons(newLessons);
+                           }}
+                           disabled={idx === lessons.length - 1}
+                           className="text-slate-400 hover:text-corp-blue bg-slate-50 hover:bg-blue-50 p-1.5 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                           title="Mover para baixo"
+                         >
+                           <ArrowDown size={16} />
+                         </button>
+                         <button 
+                           onClick={() => {
+                             const newLessons = lessons.filter((_, i) => i !== idx);
+                             setLessons(newLessons);
+                           }}
+                           className="text-red-400 hover:text-red-600 bg-red-50 hover:bg-red-100 p-1.5 rounded-lg transition-colors ml-1"
+                           title="Remover aula"
+                         >
+                           <Trash2 size={16} />
+                         </button>
+                       </div>
+
+                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+                         <div>
+                            <label className="text-xs font-semibold text-slate-500 mb-1 block">Título da Aula</label>
+                            <input
+                              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-corp-blue/20"
+                              value={lesson.title}
+                              onChange={(e) => {
+                                const newLessons = [...lessons];
+                                newLessons[idx] = { ...newLessons[idx], title: e.target.value };
+                                setLessons(newLessons);
+                              }}
+                            />
+                         </div>
+                         <div className="grid grid-cols-2 gap-4">
+                           <div>
+                              <label className="text-xs font-semibold text-slate-500 mb-1 block">Duração (Ex: 12:45)</label>
+                              <input
+                                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-corp-blue/20"
+                                value={lesson.duration}
+                                onChange={(e) => {
+                                  const newLessons = [...lessons];
+                                  newLessons[idx] = { ...newLessons[idx], duration: e.target.value };
+                                  setLessons(newLessons);
+                                }}
+                              />
+                           </div>
+                           <div>
+                              <label className="text-xs font-semibold text-slate-500 mb-1 block">Youtube ID</label>
+                              <input
+                                placeholder="ex: iBY6EDSjEF4"
+                                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-corp-blue/20"
+                                value={lesson.youtubeId}
+                                onChange={(e) => {
+                                  const newLessons = [...lessons];
+                                  newLessons[idx] = { ...newLessons[idx], youtubeId: e.target.value };
+                                  setLessons(newLessons);
+                                }}
+                              />
+                           </div>
+                         </div>
+                         <div className="md:col-span-2">
+                            <label className="text-xs font-semibold text-slate-500 mb-1 block">Descrição</label>
+                            <textarea
+                              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-corp-blue/20 custom-scrollbar"
+                              rows={2}
+                              value={lesson.description}
+                              onChange={(e) => {
+                                const newLessons = [...lessons];
+                                newLessons[idx] = { ...newLessons[idx], description: e.target.value };
+                                setLessons(newLessons);
+                              }}
+                            />
+                         </div>
+                         <div className="grid grid-cols-2 gap-4 md:col-span-2">
+                           <div>
+                              <label className="text-xs font-semibold text-slate-500 mb-1 block">Módulo</label>
+                              <input
+                                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                                value={lesson.module}
+                                onChange={(e) => {
+                                  const newLessons = [...lessons];
+                                  newLessons[idx] = { ...newLessons[idx], module: e.target.value };
+                                  setLessons(newLessons);
+                                }}
+                              />
+                           </div>
+                           <div>
+                              <label className="text-xs font-semibold text-slate-500 mb-1 block">Nível</label>
+                              <select
+                                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-corp-blue/20"
+                                value={lesson.level}
+                                onChange={(e) => {
+                                  const newLessons = [...lessons];
+                                  newLessons[idx] = { ...newLessons[idx], level: e.target.value };
+                                  setLessons(newLessons);
+                                }}
+                              >
+                                <option value="Iniciante">Iniciante</option>
+                                <option value="Intermediário">Intermediário</option>
+                                <option value="Avançado">Avançado</option>
+                              </select>
+                           </div>
+                         </div>
+                       </div>
+                    </div>
+                  ))}
+                  
+                  <button
+                    onClick={() => {
+                       setLessons([...lessons, {
+                         id: Math.random().toString(36).substr(2, 9),
+                         title: "Nova Aula",
+                         duration: "00:00",
+                         youtubeId: "",
+                         description: "",
+                         module: "Módulo 1",
+                         level: "Iniciantes"
+                       }]);
+                    }}
+                    className="w-full border-2 border-dashed border-slate-300 rounded-xl p-4 text-center text-slate-500 font-semibold hover:border-corp-blue hover:text-corp-blue hover:bg-blue-50 transition-colors flex items-center justify-center gap-2"
+                  >
+                    <Plus size={18} /> Adicionar Nova Aula
+                  </button>
+                </div>
+              </div>
+              
+              <div className="p-6 border-t border-slate-100 bg-white flex justify-end gap-3">
+                <button
+                  onClick={() => setShowAdminCourse(false)}
+                  className="px-6 py-2.5 rounded-lg border border-slate-200 text-slate-600 font-semibold hover:bg-slate-50 transition-colors text-sm"
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={() => handleSaveCourses(lessons)}
+                  disabled={isSavingCourse}
+                  className="px-6 py-2.5 rounded-lg bg-corp-blue text-white font-semibold hover:bg-[#1A284F] transition-colors text-sm shadow-md flex items-center gap-2 disabled:opacity-70"
+                >
+                  {isSavingCourse ? <PlayCircle className="animate-spin w-4 h-4" /> : <Save size={16} />}
+                  {"Salvar Cursos"}
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
       {/* Footer */}
       <footer className="bg-slate-900 text-white pt-12 pb-8 md:pt-20 md:pb-10 border-t border-white/5 no-print mt-auto">
         <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 md:grid-cols-4 gap-8 md:gap-12">
@@ -1742,7 +2424,7 @@ function AppContent() {
               <img 
                 src="https://files.manuscdn.com/user_upload_by_module/session_file/310419663028416962/glYQVTOtGErYGBoj.jpg" 
                 alt="PrimeWay Logo Dark" 
-                className="h-16 w-auto object-contain"
+                className="h-16 w-auto object-contain transition-transform duration-300 hover:scale-105 hover:opacity-90 cursor-pointer"
                 referrerPolicy="no-referrer"
               />
             </div>
@@ -1886,9 +2568,11 @@ function AppContent() {
                               valorUnitario: p.valorUnitario || 0,
                               taxaEnvioFornecedor: p.taxaEnvioFornecedor || 0,
                               quantidade: p.quantidade || 1,
+                              quantidadeCaixas: p.quantidadeCaixas ?? '',
                               comprimento: p.comprimento || 0,
                               largura: p.largura || 0,
                               altura: p.altura || 0,
+                              cbmUnitario: p.cbmUnitario || '',
                               pesoUnitario: p.pesoUnitario || 0
                             })));
                           }
@@ -2630,10 +3314,10 @@ function AppContent() {
                     )}
                   </td>
                   <td className="py-6 px-6 text-center">{p.quantidade}</td>
-                  <td className="py-6 px-6 text-right">{formatoMoeda(p.valorUnitario)}</td>
-                  <td className="py-6 px-6 text-right">{formatoMoeda(p.taxaEnvioFornecedor)}</td>
+                  <td className="py-6 px-6 text-right">{formatoMoeda(Number(p.valorUnitario) || 0)}</td>
+                  <td className="py-6 px-6 text-right">{formatoMoeda(Number(p.taxaEnvioFornecedor) || 0)}</td>
                   <td className="py-6 px-6 text-right font-bold text-[#1A284F]">
-                    {formatoMoeda((p.valorUnitario * p.quantidade) + p.taxaEnvioFornecedor)}
+                    {formatoMoeda(((Number(p.valorUnitario) || 0) * (Number(p.quantidade) || 0)) + (Number(p.taxaEnvioFornecedor) || 0))}
                   </td>
                 </tr>
               ))}
@@ -2688,9 +3372,9 @@ function AppContent() {
                   </>
                 )}
               </div>
-              <div className="bg-[#1A284F] text-[#ffffff] p-6 rounded-xl flex justify-between items-center">
-                <span className="font-bold uppercase tracking-widest text-xs">Total Estimado</span>
-                <span className="text-2xl font-black">{moeda} {formatoMoeda(results.total)}</span>
+              <div className="bg-[#1A284F] text-[#ffffff] p-6 rounded-xl flex flex-wrap md:flex-nowrap justify-between items-center gap-2">
+                <span className="font-bold uppercase tracking-widest text-xs whitespace-nowrap">Total Estimado</span>
+                <span className="text-2xl sm:text-3xl font-black whitespace-nowrap tracking-tight">{moeda} {formatoMoeda(results.total)}</span>
               </div>
             </div>
           </div>

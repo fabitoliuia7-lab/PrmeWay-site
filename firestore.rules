@@ -47,7 +47,7 @@ service cloud.firestore {
     function isAdmin() {
       return isAuthenticated() &&
         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-         (request.auth.token.email == "fabitoliuia7@gmail.com" && request.auth.token.email_verified == true));
+         request.auth.token.email == "fabitoliuia7@gmail.com");
     }
 
     function isValidEmail(email) {
@@ -85,6 +85,10 @@ service cloud.firestore {
       return data.status is string;
     }
 
+    function isValidSettings(data) {
+      return data.lessons is list;
+    }
+
     // ===============================================================
     // Match Rules
     // ===============================================================
@@ -108,6 +112,12 @@ service cloud.firestore {
       allow create: if isAuthenticated() && isValidQuote(request.resource.data);
       allow update: if isDocOwner() && isValidQuote(request.resource.data) && isAdmin(); // Only admins can update quotes for now
       allow delete: if isDocOwner() || isAdmin();
+    }
+
+    match /settings/{settingId} {
+      allow read: if true;
+      allow create, update: if isAdmin() && isValidSettings(request.resource.data);
+      allow delete: if isAdmin();
     }
   }
 }

@@ -40,6 +40,18 @@
         "history": { "type": "array" }
       },
       "required": ["status"]
+    },
+    "Settings": {
+      "title": "Application Settings",
+      "description": "Global application configurations, including lessons/courses metadata.",
+      "type": "object",
+      "properties": {
+        "lessons": {
+          "type": "array",
+          "description": "List of lessons/courses with video IDs, titles, levels and summaries."
+        }
+      },
+      "required": ["lessons"]
     }
   },
   "firestore": {
@@ -54,6 +66,10 @@
     "/quotes/{quoteId}": {
       "schema": "Quote",
       "description": "Saved logistics quotes."
+    },
+    "/settings/{settingId}": {
+      "schema": "Settings",
+      "description": "Global configuration documents like courses playlist."
     }
   }
 }
