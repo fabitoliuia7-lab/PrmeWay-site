@@ -34,7 +34,10 @@ import {
   PlayCircle,
   Youtube,
   ArrowUp,
-  ArrowDown
+  ArrowDown,
+  Check,
+  Upload,
+  ImageIcon
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -207,6 +210,9 @@ interface CalculationResult {
   pesoTotal: number;
   cbmFaturado: number;
   pesoFaturado: number;
+  pesoVolumetrico: number;
+  pesoTaxavel: number;
+  cobrarPor: 'volume' | 'peso';
 }
 
 // --- Components ---
@@ -252,6 +258,44 @@ const LevelBars = ({ level, shrink }: { level?: string; shrink?: boolean }) => {
   );
 };
 
+const compressAndSetImage = (file: File, callback: (base64: string) => void) => {
+  const reader = new FileReader();
+  reader.onload = (event) => {
+    const img = new Image();
+    img.onload = () => {
+      const canvas = document.createElement('canvas');
+      const MAX_WIDTH = 600;
+      const MAX_HEIGHT = 600;
+      let width = img.width;
+      let height = img.height;
+
+      if (width > height) {
+        if (width > MAX_WIDTH) {
+          height *= MAX_WIDTH / width;
+          width = MAX_WIDTH;
+        }
+      } else {
+        if (height > MAX_HEIGHT) {
+          width *= MAX_HEIGHT / height;
+          height = MAX_HEIGHT;
+        }
+      }
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.85); // compress quality 0.85
+        callback(dataUrl);
+      } else {
+        callback(event.target?.result as string);
+      }
+    };
+    img.src = event.target?.result as string;
+  };
+  reader.readAsDataURL(file);
+};
+
 export default function App() {
   return (
     <ErrorBoundary>
@@ -266,6 +310,7 @@ interface Lesson {
   duration: string;
   youtubeId: string;
   description: string;
+  course?: string;
   module: string;
   level: string;
 }
@@ -293,12 +338,12 @@ function AppContent() {
   const isAdmin = user?.email === 'fabitoliuia7@gmail.com';
   
   const [lessons, setLessons] = useState<Lesson[]>([
-    { id: '1', title: "Introdução à Importação", duration: "12:45", youtubeId: "iBY6EDSjEF4", description: "Esta é a aula inaugural do nosso curso de importação. Aqui, você aprenderá os passos fundamentais para realizar suas primeiras negociações com fornecedores internacionais, entender os modais de transporte e prever custos ocultos.", module: "Módulo 1", level: "Iniciantes" },
-    { id: '2', title: "Como Encontrar Fornecedores Confiáveis", duration: "18:20", youtubeId: "jfKfPfyJRdk", description: "Aprenda a pesquisar.", module: "Módulo 1", level: "Iniciantes" },
-    { id: '3', title: "Cálculo de Custos e Impostos", duration: "24:10", youtubeId: "jfKfPfyJRdk", description: "Entenda os custos.", module: "Módulo 2", level: "Intermediário" },
-    { id: '4', title: "Modais de Transporte: Aéreo vs Marítimo", duration: "15:30", youtubeId: "jfKfPfyJRdk", description: "Descubra o melhor formato.", module: "Módulo 2", level: "Básico" },
-    { id: '5', title: "Documentação de Importação", duration: "20:05", youtubeId: "jfKfPfyJRdk", description: "Papelada necessária.", module: "Módulo 3", level: "Avançado" },
-    { id: '6', title: "Desembaraço Aduaneiro Simplificado", duration: "19:50", youtubeId: "jfKfPfyJRdk", description: "Aduana de forma simples.", module: "Módulo 3", level: "Avançado" }
+    { id: '1', title: "Introdução à Importação", duration: "12:45", youtubeId: "iBY6EDSjEF4", description: "Esta é a aula inaugural do nosso curso de importação. Aqui, você aprenderá os passos fundamentais para realizar suas primeiras negociações com fornecedores internacionais, entender os modais de transporte e prever custos ocultos.", course: "Curso Inicial de Importação", module: "Módulo 1", level: "Iniciante" },
+    { id: '2', title: "Como Encontrar Fornecedores Confiáveis", duration: "18:20", youtubeId: "jfKfPfyJRdk", description: "Aprenda a pesquisar.", course: "Curso Inicial de Importação", module: "Módulo 1", level: "Iniciante" },
+    { id: '3', title: "Cálculo de Custos e Impostos", duration: "24:10", youtubeId: "jfKfPfyJRdk", description: "Entenda os custos.", course: "Curso Inicial de Importação", module: "Módulo 2", level: "Intermediário" },
+    { id: '4', title: "Modais de Transporte: Aéreo vs Marítimo", duration: "15:30", youtubeId: "jfKfPfyJRdk", description: "Descubra o melhor formato.", course: "Curso Inicial de Importação", module: "Módulo 2", level: "Intermediário" },
+    { id: '5', title: "Documentação de Importação", duration: "20:05", youtubeId: "jfKfPfyJRdk", description: "Papelada necessária.", course: "Curso Especialista", module: "Módulo 3", level: "Avançado" },
+    { id: '6', title: "Desembaraço Aduaneiro Simplificado", duration: "19:50", youtubeId: "jfKfPfyJRdk", description: "Aduana de forma simples.", course: "Curso Especialista", module: "Módulo 3", level: "Avançado" }
   ]);
   const [activeLessonIndex, setActiveLessonIndex] = useState(0);
   const [showAdminCourse, setShowAdminCourse] = useState(false);
@@ -369,6 +414,8 @@ function AppContent() {
   const [taxasAduaneiras, setTaxasAduaneiras] = useState<number | string>(0);
   const [freteInternacional, setFreteInternacional] = useState<number | string>(0);
   const [taxaEnvioLocal, setTaxaEnvioLocal] = useState<number | string>(0);
+  const [destinoEntrega, setDestinoEntrega] = useState<string>('nenhum');
+  const [taxaEntregaCBM, setTaxaEntregaCBM] = useState<number | string>(1000);
   const [aplicarMargemSeguranca, setAplicarMargemSeguranca] = useState(false);
   const [calcularRevenda, setCalcularRevenda] = useState(false);
   const [margemLucro, setMargemLucro] = useState<number | string>(0);
@@ -386,7 +433,8 @@ function AppContent() {
   const [adminTrackingDate, setAdminTrackingDate] = useState('');
   const [isSavingTracking, setIsSavingTracking] = useState(false);
 
-  // Debit Note States
+  // Rodoviario States
+  const [destinoRodoviario, setDestinoRodoviario] = useState<string>('');
   const [showDebitNoteModal, setShowDebitNoteModal] = useState(false);
   const [isGeneratingDebit, setIsGeneratingDebit] = useState(false);
   interface DebitItem {
@@ -407,6 +455,7 @@ function AppContent() {
     origin: 'China', // or South Africa
     shipMode: 'AIR', // AIR or SEA
     priceType: 'FREIGHT_AND_DUTY', // FREIGHT_ONLY, DUTY_ONLY, FREIGHT_AND_DUTY
+    paymentType: 'NORMAL', // NORMAL, SEPARATE_PAYMENT, ADVANCE
   });
   const [debitItems, setDebitItems] = useState<DebitItem[]>([
     {
@@ -732,12 +781,47 @@ function AppContent() {
     const cbmFaturado = cbmTotal > 0 ? Math.max(0.1, cbmTotal) : 0;
     const pesoFaturado = pesoTotal > 0 ? Math.max(0.5, pesoTotal) : 0;
     
+    let pesoVolumetrico = 0;
+    if (tipoTransporte === 'maritimo') {
+      pesoVolumetrico = cbmTotal * 1000;
+    } else if (tipoTransporte === 'aereo') {
+      pesoVolumetrico = cbmTotal * 166.67;
+    } else if (tipoTransporte === 'rodoviario') {
+      pesoVolumetrico = cbmTotal * 333.33;
+    }
+    
+    let pesoTaxavel = pesoTotal > 0 || cbmTotal > 0 ? Math.max(pesoTotal, pesoVolumetrico) : 0;
+    let cobrarPor: 'peso' | 'volume' = pesoVolumetrico > pesoTotal ? 'volume' : 'peso';
+    
     let custosEnvio = 0;
     let valorDespacho = 0;
     let valorFreteInt = 0;
-    let valorEnvioLocal = Number(taxaEnvioLocal) || 0;
     
-    if (tipoTransporte === 'aereo') {
+    let valorEnvioLocal = Number(taxaEnvioLocal) || 0;
+    if (destinoEntrega !== 'nenhum' && destinoEntrega !== 'manual') {
+      const calculatedFee = cbmFaturado * (Number(taxaEntregaCBM) || 1000);
+      valorEnvioLocal = Math.max(200, calculatedFee);
+      
+      if (destinoEntrega === 'maputo_cidade') {
+        valorEnvioLocal = 0;
+      }
+    }
+    
+    if (tipoTransporte === 'rodoviario') {
+      let tarifaBase = 0;
+      switch (destinoRodoviario) {
+        case 'xai_xai': tarifaBase = 3.00; break;
+        case 'maxixe_inhambane': tarifaBase = 5.50; break;
+        case 'beira': tarifaBase = 12.00; break;
+        case 'tete': tarifaBase = 16.00; break;
+        case 'nampula': tarifaBase = 22.00; break;
+        case 'maputo': tarifaBase = 0; break; // Maybe flat base or 0, depending on needs. But let's say 0 for now as 'base'.
+        default: tarifaBase = 0;
+      }
+      
+      valorFreteInt = pesoTaxavel * tarifaBase;
+      custosEnvio = valorFreteInt + valorEnvioLocal; // Assume despacho is separated or included in others
+    } else if (tipoTransporte === 'aereo') {
       let totalWeightWeightBased = 0;
       let totalCostWeightBased = 0;
       let totalCostUnitBased = 0;
@@ -817,9 +901,12 @@ function AppContent() {
       cbmTotal,
       pesoTotal,
       cbmFaturado,
-      pesoFaturado
+      pesoFaturado,
+      pesoVolumetrico,
+      pesoTaxavel,
+      cobrarPor
     };
-  }, [produtos, taxaProcessamento, comissaoServicos, taxaLevantamento, tipoTransporte, taxasAduaneiras, freteInternacional, taxaEnvioLocal, calcularRevenda, margemLucro, custosAdicionais, moeda, taxaCambio, aplicarMargemSeguranca]);
+  }, [produtos, taxaProcessamento, comissaoServicos, taxaLevantamento, tipoTransporte, taxasAduaneiras, freteInternacional, taxaEnvioLocal, calcularRevenda, margemLucro, custosAdicionais, moeda, taxaCambio, aplicarMargemSeguranca, destinoEntrega, taxaEntregaCBM, destinoRodoviario]);
 
   // --- Handlers ---
 
@@ -1681,33 +1768,113 @@ function AppContent() {
                         </div>
                       )}
                       
-                      <label className="label-corp !text-corp-blue-light mb-2">URL da Imagem</label>
-                      <input 
-                        type="url" 
-                        value={p.imageUrl || ''} 
-                        onChange={(e) => atualizarProduto(p.id, 'imageUrl', e.target.value)}
-                        className="input-modern !bg-slate-50 !py-2.5 !px-3 text-xs w-full" 
-                        placeholder="https://exemplo.com/imagem.jpg" 
-                      />
+                      <div className="flex flex-col gap-2">
+                        <label className="label-corp !text-corp-blue-light !mb-0 flex items-center justify-between">
+                          <span>Imagem do Produto</span>
+                          {p.imageUrl && (
+                            <button
+                              type="button"
+                              onClick={() => atualizarProduto(p.id, 'imageUrl', '')}
+                              className="text-[10px] font-bold text-red-500 hover:text-red-700 uppercase"
+                            >
+                              Remover Imagem
+                            </button>
+                          )}
+                        </label>
+                        
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1">
+                          {/* File Upload Zone */}
+                          <div className="relative group border border-dashed border-slate-300 hover:border-blue-400 rounded-xl p-3 flex flex-col items-center justify-center bg-slate-50 hover:bg-blue-50/20 transition-all cursor-pointer h-[110px]">
+                            <input 
+                              type="file" 
+                              accept="image/*"
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) {
+                                  compressAndSetImage(file, (base64) => {
+                                    atualizarProduto(p.id, 'imageUrl', base64);
+                                  });
+                                }
+                              }}
+                              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                            />
+                            {p.imageUrl && p.imageUrl.startsWith('data:') ? (
+                              <div className="flex items-center gap-2">
+                                <img src={p.imageUrl} alt="Preview" className="w-14 h-14 object-cover rounded-lg shadow-sm border border-slate-200" referrerPolicy="no-referrer" />
+                                <div className="text-left">
+                                  <p className="text-[9px] font-bold text-emerald-600 uppercase flex items-center gap-1">
+                                    <CheckCircle2 size={12} /> Carregado
+                                  </p>
+                                  <p className="text-[9px] text-slate-400">Clique para substituir</p>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="text-center">
+                                <span className="inline-block p-1.5 bg-white text-slate-400 group-hover:text-blue-500 rounded-lg shadow-sm mb-1 border border-slate-100">
+                                  <Upload size={14} />
+                                </span>
+                                <p className="text-[10px] font-bold text-slate-500">Subir do Aparelho</p>
+                                <p className="text-[8px] text-slate-400 leading-tight">Imagem ou foto de câmara</p>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Link upload option */}
+                          <div className="flex flex-col justify-center border border-slate-200 rounded-xl p-3 bg-slate-50/50 h-[110px]">
+                            {p.imageUrl && !p.imageUrl.startsWith('data:') ? (
+                              <div className="flex items-center gap-2">
+                                <img src={p.imageUrl} alt="Preview" className="w-14 h-14 object-cover rounded-lg shadow-sm border border-slate-200" referrerPolicy="no-referrer" />
+                                <div className="text-left flex-1 min-w-0">
+                                  <p className="text-[10px] font-bold text-blue-600 uppercase">Link da Web</p>
+                                  <p className="text-[9px] text-slate-400 truncate leading-tight">{p.imageUrl}</p>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const url = prompt("Cole o link da nova imagem:", p.imageUrl);
+                                      if (url !== null) atualizarProduto(p.id, 'imageUrl', url);
+                                    }}
+                                    className="text-[9px] font-bold text-corp-blue hover:underline uppercase block mt-1"
+                                  >
+                                    Alterar Link
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="flex flex-col gap-1">
+                                <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1">
+                                  <Globe size={11} /> Link da Internet (URL):
+                                </span>
+                                <input 
+                                  type="url" 
+                                  value={p.imageUrl && !p.imageUrl.startsWith('data:') ? p.imageUrl : ''} 
+                                  onChange={(e) => atualizarProduto(p.id, 'imageUrl', e.target.value)}
+                                  className="input-modern !bg-white !py-1.5 !px-2 text-[10px] w-full border border-slate-200" 
+                                  placeholder="https://exemplo.com/foto.jpg" 
+                                />
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
                     </div>
                     
-                    {tipoTransporte === 'maritimo' && (
+                    {(tipoTransporte === 'maritimo' || tipoTransporte === 'aereo' || tipoTransporte === 'rodoviario') && (
                       <div className="bg-white p-4 rounded-xl border border-slate-100 shadow-sm">
                         <div className="flex flex-col md:flex-row md:items-center gap-4">
                           <label className="label-corp !text-corp-blue-light !mb-0 shrink-0">Dimensões & Vol</label>
-                          <div className="grid grid-cols-5 gap-3 flex-1">
-                            <div className="relative" title="Quantidade de pacotes/caixas. Se vazio, usa a Quantidade de Itens.">
-                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[8px] font-bold text-slate-400 uppercase">VOLS</span>
+                          <div className="grid grid-cols-3 sm:grid-cols-5 gap-2.5 flex-1">
+                            <div className="relative col-span-3 sm:col-span-1" title="Quantidade de pacotes/caixas. Se vazio, usa a Quantidade de Itens.">
+                              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[8px] font-bold text-slate-400 uppercase pointer-events-none">VOLS</span>
                               <input 
                                 type="number" step="any"
                                 value={p.quantidadeCaixas !== undefined ? p.quantidadeCaixas : ''} 
                                 onChange={(e) => atualizarProduto(p.id, 'quantidadeCaixas', e.target.value)}
-                                className="input-modern !bg-slate-50 !py-2.5 !pl-9 !pr-2 text-xs font-semibold" 
+                                className="input-modern !bg-slate-50 !py-2.5 !pl-11 !pr-2 text-xs font-semibold w-full" 
                                 placeholder={String(p.quantidade || 1)}
                               />
                             </div>
-                            <div className="relative">
-                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[8px] font-bold text-slate-300 uppercase">C</span>
+                            <div className="relative col-span-1 sm:col-span-1">
+                              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[8px] font-bold text-slate-300 uppercase pointer-events-none">C</span>
                               <input 
                                 type="number" step="any"
                                 value={p.comprimento || ''} 
@@ -1715,12 +1882,12 @@ function AppContent() {
                                   atualizarProduto(p.id, 'comprimento', e.target.value);
                                   atualizarProduto(p.id, 'cbmUnitario', '');
                                 }}
-                                className="input-modern !bg-slate-50 !py-2.5 !pl-6 !pr-2 text-xs" 
+                                className="input-modern !bg-slate-50 !py-2.5 !pl-6 !pr-1 text-xs w-full" 
                                 placeholder="0"
                               />
                             </div>
-                            <div className="relative">
-                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[8px] font-bold text-slate-300 uppercase">L</span>
+                            <div className="relative col-span-1 sm:col-span-1">
+                              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[8px] font-bold text-slate-300 uppercase pointer-events-none">L</span>
                               <input 
                                 type="number" step="any"
                                 value={p.largura || ''} 
@@ -1728,12 +1895,12 @@ function AppContent() {
                                   atualizarProduto(p.id, 'largura', e.target.value);
                                   atualizarProduto(p.id, 'cbmUnitario', '');
                                 }}
-                                className="input-modern !bg-slate-50 !py-2.5 !pl-6 !pr-2 text-xs" 
+                                className="input-modern !bg-slate-50 !py-2.5 !pl-6 !pr-1 text-xs w-full" 
                                 placeholder="0"
                               />
                             </div>
-                            <div className="relative">
-                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[8px] font-bold text-slate-300 uppercase">A</span>
+                            <div className="relative col-span-1 sm:col-span-1">
+                              <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[8px] font-bold text-slate-300 uppercase pointer-events-none">A</span>
                               <input 
                                 type="number" step="any"
                                 value={p.altura || ''} 
@@ -1741,12 +1908,12 @@ function AppContent() {
                                   atualizarProduto(p.id, 'altura', e.target.value);
                                   atualizarProduto(p.id, 'cbmUnitario', '');
                                 }}
-                                className="input-modern !bg-slate-50 !py-2.5 !pl-6 !pr-2 text-xs" 
+                                className="input-modern !bg-slate-50 !py-2.5 !pl-6 !pr-1 text-xs w-full" 
                                 placeholder="0"
                               />
                             </div>
-                            <div className="relative">
-                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[8px] font-bold text-slate-400 uppercase">CBM</span>
+                            <div className="relative col-span-3 sm:col-span-1">
+                              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-[8px] font-bold text-blue-500 uppercase pointer-events-none">CBM</span>
                               <input 
                                 type="number" step="any"
                                 value={p.cbmUnitario || ''} 
@@ -1756,7 +1923,7 @@ function AppContent() {
                                   atualizarProduto(p.id, 'largura', '');
                                   atualizarProduto(p.id, 'altura', '');
                                 }}
-                                className="input-modern !bg-blue-50/50 border-blue-200 !py-2.5 !pl-9 !pr-2 text-xs font-bold text-blue-700 placeholder:text-blue-300" 
+                                className="input-modern !bg-blue-50/50 border-blue-200 !py-2.5 !pl-11 !pr-2 text-xs font-bold text-blue-700 placeholder:text-blue-300 w-full" 
                                 placeholder="Unid."
                               />
                             </div>
@@ -1793,8 +1960,27 @@ function AppContent() {
                   >
                     <option value="maritimo">Marítimo</option>
                     <option value="aereo">Aéreo</option>
+                    <option value="rodoviario">Rodoviário</option>
                   </select>
                 </div>
+                {tipoTransporte === 'rodoviario' && (
+                  <div className="col-span-2 md:col-span-3">
+                    <label className="label-corp">Destino (Moçambique)</label>
+                    <select 
+                      value={destinoRodoviario} 
+                      onChange={(e) => setDestinoRodoviario(e.target.value)}
+                      className="input-modern font-semibold !py-2.5 !px-3 text-xs"
+                    >
+                      <option value="">-- Selecione o destino --</option>
+                      <option value="maputo">Maputo/Matola (Base)</option>
+                      <option value="xai_xai">Xai-Xai (~200km) - 3.00 MZN/kg</option>
+                      <option value="maxixe_inhambane">Maxixe/Inhambane (~450km) - 5.50 MZN/kg</option>
+                      <option value="beira">Beira (~1200km) - 12.00 MZN/kg</option>
+                      <option value="tete">Tete (~1500km) - 16.00 MZN/kg</option>
+                      <option value="nampula">Nampula (~2000km) - 22.00 MZN/kg</option>
+                    </select>
+                  </div>
+                )}
                 {tipoTransporte === 'maritimo' && (
                   <>
                     <div>
@@ -1821,11 +2007,68 @@ function AppContent() {
                   <label className="label-corp">Inland</label>
                   <input 
                     type="number" step="any"
-                    value={taxaEnvioLocal || ''} 
+                    value={destinoEntrega !== 'nenhum' && destinoEntrega !== 'manual' ? results.valorEnvioLocal : (taxaEnvioLocal || '')} 
                     onChange={(e) => setTaxaEnvioLocal(e.target.value)}
-                    className="input-modern !py-2.5 !px-3 text-xs" 
+                    disabled={destinoEntrega !== 'nenhum' && destinoEntrega !== 'manual'}
+                    className="input-modern !py-2.5 !px-3 text-xs disabled:opacity-50 disabled:bg-slate-50" 
                   />
+                  {destinoEntrega !== 'nenhum' && destinoEntrega !== 'manual' && (
+                    <span className="text-[10px] text-corp-blue font-semibold mt-1 block">Valor Calculado Automaticamente</span>
+                  )}
                 </div>
+              </div>
+            </section>
+            
+            {/* Delivery Section */}
+            <section className="glass-card p-6">
+              <h2 className="text-xs font-bold text-slate-800 uppercase tracking-widest mb-6 flex items-center gap-2">
+                <Truck size={14} className="text-corp-blue" />
+                Entrega Nacional (Opcional)
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 md:gap-6">
+                <div>
+                  <label className="label-corp">Província de Destino</label>
+                  <select 
+                    value={destinoEntrega}
+                    onChange={(e) => setDestinoEntrega(e.target.value)}
+                    className="input-modern font-semibold !py-2.5 !px-3 text-xs w-full"
+                  >
+                    <option value="nenhum">Nenhuma / Sem Entrega</option>
+                    <option value="manual">Definir Manualmente</option>
+                    <option value="maputo_cidade">Maputo Cidade e Matola</option>
+                    <option value="maputo_prov">Maputo Província</option>
+                    <option value="gaza">Gaza</option>
+                    <option value="inhambane">Inhambane</option>
+                    <option value="sofala">Sofala</option>
+                    <option value="manica">Manica</option>
+                    <option value="tete">Tete</option>
+                    <option value="zambezia">Zambézia</option>
+                    <option value="nampula">Nampula</option>
+                    <option value="cabo_delgado">Cabo Delgado</option>
+                    <option value="niassa">Niassa</option>
+                  </select>
+                </div>
+                
+                {destinoEntrega !== 'nenhum' && destinoEntrega !== 'manual' && destinoEntrega !== 'maputo_cidade' && (
+                  <div>
+                    <label className="label-corp">Taxa Base / CBM (MZN)</label>
+                    <input 
+                      type="number" step="any"
+                      value={taxaEntregaCBM || ''} 
+                      onChange={(e) => setTaxaEntregaCBM(e.target.value)}
+                      className="input-modern !py-2.5 !px-3 text-xs w-full" 
+                    />
+                    <span className="text-[9px] text-slate-400 mt-1 block">Abaixo de 0.1 CBM, taxa mínima de 200 MZN.</span>
+                  </div>
+                )}
+                
+                {destinoEntrega === 'maputo_cidade' && (
+                   <div className="flex items-center text-[10px] text-corp-blue font-semibold col-span-1 md:col-span-1">
+                     <span className="bg-blue-50 px-3 py-2 rounded-lg border border-blue-100 flex items-center gap-2">
+                       <Check size={14} /> Isento de taxa volumétrica adicional
+                     </span>
+                   </div>
+                )}
               </div>
             </section>
           </div>
@@ -1957,21 +2200,21 @@ function AppContent() {
       </main>
         </>
       ) : (
-        <main className="flex-grow bg-slate-50 py-12 px-6">
+        <main className="flex-grow bg-slate-50 py-12 px-4 md:px-6">
           <div className="max-w-7xl mx-auto">
             {/* Classroom Header Banner */}
-            <div className="bg-gradient-to-r from-slate-900 via-[#1A284F] to-slate-900 rounded-3xl p-8 md:p-12 text-white mb-10 shadow-2xl relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+            <div className="bg-gradient-to-r from-slate-900 via-[#1A284F] to-slate-900 rounded-3xl p-6 md:p-12 text-white mb-8 shadow-2xl relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
               <div className="absolute inset-0 bg-grid-white/[0.03] bg-[size:20px_20px] pointer-events-none" />
               <div className="relative z-10 space-y-3 max-w-2xl">
                 <div className="flex items-center gap-3">
                   <span className="bg-corp-orange text-white text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-widest animate-pulse">Academia PrimeWay</span>
                   <span className="bg-white/10 text-slate-200 text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-widest">Portal do Aluno</span>
                 </div>
-                <h1 className="text-3xl md:text-5xl font-black tracking-tight leading-none text-white font-heading">
-                  CURSO DE IMPORTAÇÃO DA CHINA
+                <h1 className="text-2xl md:text-5xl font-black tracking-tight leading-none text-white font-heading">
+                  IMPORTAÇÃO DA CHINA E ÁFRICA DO SUL
                 </h1>
-                <p className="text-slate-300 text-sm md:text-base pr-4 leading-relaxed font-semibold">
-                  Aprenda como importar mercadorias com segurança direto da China e terceirizar seus embarques pelo Porto de Maputo e canais aduaneiros de Moçambique.
+                <p className="text-slate-300 text-xs md:text-base pr-4 leading-relaxed font-semibold">
+                  Aprenda a importar com segurança e otimizar os seus embarques aduaneiros em Moçambique.
                 </p>
                 
                 {/* Statistics Tracker */}
@@ -1993,18 +2236,18 @@ function AppContent() {
                 </div>
               </div>
 
-              <div className="relative z-10 flex flex-col sm:flex-row gap-3 md:self-end">
+              <div className="relative z-10 flex flex-col w-full md:w-auto sm:flex-row gap-3 md:self-end">
                 {isAdmin && (
                   <button 
                     onClick={() => setShowAdminCourse(true)}
-                    className="text-xs font-bold text-corp-orange hover:bg-corp-orange hover:text-white transition-all border border-corp-orange/40 px-5 py-3.5 rounded-xl flex items-center justify-center gap-2 bg-black/30"
+                    className="text-xs font-bold w-full md:w-auto text-corp-orange hover:bg-corp-orange hover:text-white transition-all border border-corp-orange/40 px-5 py-3.5 rounded-xl flex items-center justify-center gap-2 bg-black/30"
                   >
                     <Edit size={14} /> Organizar Cursos
                   </button>
                 )}
                 <button 
                   onClick={() => navigateTo('landing', 'inicio')}
-                  className="text-xs font-bold text-slate-950 hover:bg-slate-200 transition-all px-5 py-3.5 rounded-xl flex items-center justify-center gap-2 bg-white shadow-lg"
+                  className="text-xs font-bold w-full md:w-auto text-slate-950 hover:bg-slate-200 transition-all px-5 py-3.5 rounded-xl flex items-center justify-center gap-2 bg-white shadow-lg"
                 >
                   <X size={14} /> Voltar ao Início
                 </button>
@@ -2013,13 +2256,14 @@ function AppContent() {
 
             {/* Course Playlist & Video Main Interface */}
             {lessons.length > 0 ? (
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8 items-start">
                 
                 {/* Video Player & Notes Column */}
-                <div className="lg:col-span-2 space-y-8">
-                  <div className="bg-slate-900 rounded-3xl overflow-hidden aspect-video shadow-2xl relative border-4 border-[#1A284F]/10">
+                <div className="lg:col-span-2 space-y-6 md:space-y-8">
+                  <div className="bg-slate-900 rounded-2xl md:rounded-3xl overflow-hidden aspect-video shadow-2xl relative border-4 border-[#1A284F]/10">
                     {lessons[activeLessonIndex]?.youtubeId ? (
                       <iframe 
+                        key={lessons[activeLessonIndex]?.youtubeId}
                         className="w-full h-full absolute top-0 left-0"
                         src={`https://www.youtube.com/embed/${lessons[activeLessonIndex].youtubeId}`} 
                         title="Aula Player" 
@@ -2037,10 +2281,13 @@ function AppContent() {
                   </div>
 
                   {/* Lesson title and resources details */}
-                  <div className="bg-white p-8 rounded-3xl border border-slate-100 shadow-sm space-y-6">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-5">
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2.5">
+                  <div className="bg-white p-5 md:p-8 rounded-2xl md:rounded-3xl border border-slate-100 shadow-sm space-y-5 md:space-y-6">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4 md:pb-5">
+                      <div className="space-y-2">
+                        <div className="flex flex-wrap items-center gap-2.5">
+                          <span className="text-[10px] font-bold text-[#1A284F] uppercase tracking-wider bg-slate-100 border border-slate-200 px-2.5 py-1 rounded-md">
+                            {lessons[activeLessonIndex]?.course || 'Curso Geral'}
+                          </span>
                           <span className="text-[10px] font-bold text-corp-orange uppercase tracking-wider bg-orange-100/50 px-2.5 py-1 rounded-md">
                             {lessons[activeLessonIndex]?.module}
                           </span>
@@ -2049,14 +2296,14 @@ function AppContent() {
                             Duração: {lessons[activeLessonIndex]?.duration}
                           </span>
                         </div>
-                        <h3 className="text-2xl md:text-3xl font-black text-[#1A284F] tracking-tight pt-1 leading-tight">
+                        <h3 className="text-xl md:text-3xl font-black text-[#1A284F] tracking-tight pt-1 leading-tight">
                           {lessons[activeLessonIndex]?.title}
                         </h3>
                       </div>
 
                       <button 
                         onClick={() => toggleLessonCompletion(lessons[activeLessonIndex].id)}
-                        className={`px-5 py-3 rounded-xl text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-2 border shadow-sm ${
+                        className={`px-4 py-2.5 md:px-5 md:py-3 rounded-xl w-full sm:w-auto text-[10px] md:text-xs font-bold uppercase tracking-wider transition-all flex items-center justify-center gap-2 border shadow-sm ${
                           completedLessons.includes(lessons[activeLessonIndex].id)
                             ? 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100/60'
                             : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
@@ -2067,20 +2314,20 @@ function AppContent() {
                       </button>
                     </div>
 
-                    <div className="space-y-4">
-                      <h4 className="font-bold text-[#1A284F] text-sm uppercase tracking-widest">Resumo do Conteúdo</h4>
-                      <p className="text-slate-600 leading-relaxed text-sm">
+                    <div className="space-y-2.5 md:space-y-4">
+                      <h4 className="font-bold text-[#1A284F] text-xs md:text-sm uppercase tracking-widest">Resumo do Conteúdo</h4>
+                      <p className="text-slate-600 leading-relaxed text-xs md:text-sm line-clamp-3 md:line-clamp-none">
                         {lessons[activeLessonIndex]?.description || 'Esta aula aborda estratégias essenciais de posicionamento, busca de fornecedores homologados e documentação de comércio marítimo relevante para Moçambique.'}
                       </p>
                     </div>
 
                     {/* Rich Interactive Notes Section */}
-                    <div className="bg-slate-50 p-6 rounded-2xl space-y-4 border border-slate-100">
+                    <div className="bg-slate-50 p-4 md:p-6 rounded-xl md:rounded-2xl space-y-3 md:space-y-4 border border-slate-100">
                       <div className="flex justify-between items-center">
-                        <h4 className="font-bold text-[#1A284F] text-sm uppercase tracking-widest flex items-center gap-2">
-                          <Edit size={16} className="text-corp-orange" /> Minhas Anotações de Estudo
+                        <h4 className="font-bold text-[#1A284F] text-[10px] md:text-sm uppercase tracking-widest flex items-center gap-1.5 md:gap-2">
+                          <Edit size={14} className="text-corp-orange" /> Minhas Anotações
                         </h4>
-                        <span className="text-[10px] uppercase font-bold text-slate-400 font-mono">
+                        <span className="text-[9px] md:text-[10px] uppercase font-bold text-slate-400 font-mono">
                           Salvo no Navegador
                         </span>
                       </div>
@@ -2088,8 +2335,8 @@ function AppContent() {
                       <textarea
                         value={lessonNotes[lessons[activeLessonIndex]?.id || ''] || ''}
                         onChange={(e) => saveLessonNote(lessons[activeLessonIndex].id, e.target.value)}
-                        placeholder="Escreva aqui suas observações sobre esta lição... (Ex: nomes de fornecedores, taxas calculadas, dicas de despacho...)"
-                        className="w-full h-32 p-4 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-corp-blue text-slate-700 placeholder-slate-400 resize-none font-medium leading-relaxed"
+                        placeholder="Escreva aqui suas observações sobre esta lição..."
+                        className="w-full h-20 md:h-32 p-3 md:p-4 bg-white border border-slate-200 rounded-xl text-xs md:text-sm focus:outline-none focus:ring-2 focus:ring-corp-blue text-slate-700 placeholder-slate-400 resize-none font-medium leading-relaxed custom-scrollbar"
                       />
                     </div>
                   </div>
@@ -2117,59 +2364,87 @@ function AppContent() {
                     </div>
 
                     <div className="space-y-2.5 max-h-[600px] overflow-y-auto pr-1 custom-scrollbar">
-                      {lessons
-                        .filter(l => 
+                      {(() => {
+                        const filteredLessons = lessons.filter(l => 
                           l.title.toLowerCase().includes(courseSearch.toLowerCase()) || 
-                          l.description.toLowerCase().includes(courseSearch.toLowerCase())
-                        )
-                        .map((aula, idx) => {
-                          const realIndex = lessons.findIndex(l => l.id === aula.id);
-                          const isActive = realIndex === activeLessonIndex;
-                          const isCompleted = completedLessons.includes(aula.id);
-                          return (
-                            <div 
-                              key={aula.id} 
-                              onClick={() => {
-                                setActiveLessonIndex(realIndex);
-                                window.scrollTo({ top: 0, behavior: 'smooth' });
-                              }}
-                              className={`p-4 rounded-xl border cursor-pointer transition-all flex items-center gap-3 relative overflow-hidden group ${
-                                isActive 
-                                  ? 'bg-[#1A284F] text-white border-[#1A284F] shadow-md scale-[1.01]' 
-                                  : 'bg-white border-slate-100 text-slate-600 hover:bg-slate-50 hover:border-[#1A284F]/30'
-                              }`}
-                            >
-                              {/* Left status badge indicator */}
-                              <button 
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  toggleLessonCompletion(aula.id);
-                                }}
-                                className="focus:outline-none shrink-0"
-                              >
-                                {isCompleted ? (
-                                  <ShieldCheck className="w-5 h-5 text-emerald-500 hover:scale-110 transition-transform" />
-                                ) : (
-                                  <div className={`w-5 h-5 rounded-full border-2 transition-transform hover:scale-110 ${isActive ? 'border-sky-300' : 'border-slate-300'}`} />
-                                )}
-                              </button>
+                          l.description.toLowerCase().includes(courseSearch.toLowerCase()) ||
+                          (l.course || '').toLowerCase().includes(courseSearch.toLowerCase())
+                        );
 
-                              <div className="min-w-0 flex-grow">
-                                <span className={`flex items-center gap-2 text-[8px] font-bold uppercase tracking-wider mb-0.5 ${isActive ? 'text-sky-300' : 'text-slate-400'}`}>
-                                  <span>Aula {realIndex + 1} • {aula.module}</span>
-                                  <LevelBars level={aula.level} shrink={true} />
-                                </span>
-                                <h5 className="font-bold text-xs truncate leading-tight pr-4">
-                                  {aula.title}
-                                </h5>
-                              </div>
-                              
-                              <span className={`text-[10px] font-mono font-medium shrink-0 ${isActive ? 'text-sky-200' : 'text-slate-400'}`}>
-                                {aula.duration}
-                              </span>
+                        const groupedCourses = filteredLessons.reduce((acc, curr) => {
+                          const course = curr.course || 'Curso Geral';
+                          if (!acc[course]) acc[course] = {};
+                          const module = curr.module || 'Módulo 1';
+                          if (!acc[course][module]) acc[course][module] = [];
+                          acc[course][module].push(curr);
+                          return acc;
+                        }, {} as Record<string, Record<string, typeof lessons>>);
+
+                        return Object.entries(groupedCourses).map(([courseName, modules], courseIdx) => (
+                          <div key={courseName} className="mb-6 last:mb-0">
+                            <h4 className="text-xs font-black text-[#1A284F] uppercase tracking-widest pl-1 mb-3 border-b border-slate-100 pb-2">{courseName}</h4>
+                            
+                            <div className="space-y-4">
+                              {Object.entries(modules).map(([moduleName, moduleLessons], modIdx) => (
+                                <div key={moduleName} className="space-y-2">
+                                  <h5 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider pl-1">{moduleName}</h5>
+                                  <div className="space-y-1.5 pl-2 border-l-2 border-slate-100">
+                                    {moduleLessons.map((aula) => {
+                                      const realIndex = lessons.findIndex(l => l.id === aula.id);
+                                      const isActive = realIndex === activeLessonIndex;
+                                      const isCompleted = completedLessons.includes(aula.id);
+                                      
+                                      return (
+                                        <div 
+                                          key={aula.id} 
+                                          onClick={() => {
+                                            setActiveLessonIndex(realIndex);
+                                            window.scrollTo({ top: 0, behavior: 'smooth' });
+                                          }}
+                                          className={`p-3 rounded-xl cursor-pointer transition-all flex items-center gap-3 relative overflow-hidden group border ${
+                                            isActive 
+                                              ? 'bg-[#1A284F] text-white border-[#1A284F] shadow-md scale-[1.01]' 
+                                              : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-[#1A284F]/30'
+                                          }`}
+                                        >
+                                          {/* Left status badge indicator */}
+                                          <button 
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              toggleLessonCompletion(aula.id);
+                                            }}
+                                            className="focus:outline-none shrink-0"
+                                          >
+                                            {isCompleted ? (
+                                              <ShieldCheck className="w-5 h-5 text-emerald-500 hover:scale-110 transition-transform" />
+                                            ) : (
+                                              <div className={`w-5 h-5 rounded-full border-2 transition-transform hover:scale-110 ${isActive ? 'border-sky-300' : 'border-slate-300'}`} />
+                                            )}
+                                          </button>
+
+                                          <div className="min-w-0 flex-grow">
+                                            <span className={`flex items-center gap-2 text-[8px] font-bold uppercase tracking-wider mb-0.5 ${isActive ? 'text-sky-300' : 'text-slate-400'}`}>
+                                              <span>Aula {realIndex + 1}</span>
+                                              <LevelBars level={aula.level} shrink={true} />
+                                            </span>
+                                            <h5 className="font-bold text-xs truncate leading-tight pr-4">
+                                              {aula.title}
+                                            </h5>
+                                          </div>
+                                          
+                                          <span className={`text-[10px] font-mono font-medium shrink-0 ${isActive ? 'text-sky-200' : 'text-slate-400'}`}>
+                                            {aula.duration}
+                                          </span>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              ))}
                             </div>
-                          );
-                        })}
+                          </div>
+                        ));
+                      })()}
                     </div>
                   </div>
 
@@ -2225,29 +2500,29 @@ function AppContent() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[60] flex items-center justify-center p-4 overflow-y-auto"
+            className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[60] flex items-start sm:items-center justify-center p-0 sm:p-4"
           >
-            <div className="bg-white rounded-2xl w-full max-w-4xl min-h-[500px] flex flex-col my-8 relative overflow-hidden shadow-2xl">
-              <div className="p-6 border-b border-slate-100 flex justify-between items-center bg-gray-50/50">
+            <div className="bg-white sm:rounded-2xl w-full h-full sm:h-auto max-w-4xl sm:max-h-[90vh] flex flex-col relative overflow-hidden shadow-2xl">
+              <div className="p-4 sm:p-6 border-b border-slate-100 flex justify-between items-center bg-gray-50/50">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-corp-blue/10 flex items-center justify-center text-corp-blue">
+                  <div className="w-10 h-10 rounded-full bg-corp-blue/10 flex items-center justify-center text-corp-blue shrink-0">
                     <Edit size={20} />
                   </div>
                   <div>
-                    <h3 className="text-xl font-bold text-[#1A284F]">Organizar Cursos</h3>
-                    <p className="text-sm text-slate-500">Adicione, edite ou remova aulas</p>
+                    <h3 className="text-lg sm:text-xl font-bold text-[#1A284F]">Organizar Cursos</h3>
+                    <p className="text-xs sm:text-sm text-slate-500">Adicione, edite ou remova aulas</p>
                   </div>
                 </div>
-                <button onClick={() => setShowAdminCourse(false)} className="text-slate-400 hover:text-slate-600 bg-white p-2 rounded-full hover:bg-slate-100 transition-colors">
+                <button onClick={() => setShowAdminCourse(false)} className="text-slate-400 hover:text-slate-600 bg-white p-2 rounded-full hover:bg-slate-100 transition-colors shrink-0">
                   <X size={20} />
                 </button>
               </div>
               
-              <div className="flex-1 p-6 overflow-y-auto bg-slate-50">
+              <div className="flex-1 p-4 sm:p-6 overflow-y-auto bg-slate-50 custom-scrollbar">
                 <div className="space-y-6">
                   {lessons.map((lesson, idx) => (
-                    <div key={lesson.id} className="bg-white p-4 rounded-xl border border-slate-200 relative">
-                       <div className="absolute top-4 right-4 flex items-center gap-1.5">
+                    <div key={lesson.id} className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 relative shadow-sm">
+                       <div className="absolute top-4 right-4 flex items-center gap-1.5 z-10 bg-white/80 backdrop-blur-sm p-1 rounded-lg">
                          <button 
                            onClick={() => {
                              if (idx === 0) return;
@@ -2258,7 +2533,7 @@ function AppContent() {
                              setLessons(newLessons);
                            }}
                            disabled={idx === 0}
-                           className="text-slate-400 hover:text-corp-blue bg-slate-50 hover:bg-blue-50 p-1.5 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                           className="text-slate-400 hover:text-corp-blue bg-slate-50 hover:bg-blue-50 p-1.5 rounded-md disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                            title="Mover para cima"
                          >
                            <ArrowUp size={16} />
@@ -2273,7 +2548,7 @@ function AppContent() {
                              setLessons(newLessons);
                            }}
                            disabled={idx === lessons.length - 1}
-                           className="text-slate-400 hover:text-corp-blue bg-slate-50 hover:bg-blue-50 p-1.5 rounded-lg disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                           className="text-slate-400 hover:text-corp-blue bg-slate-50 hover:bg-blue-50 p-1.5 rounded-md disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
                            title="Mover para baixo"
                          >
                            <ArrowDown size={16} />
@@ -2283,94 +2558,109 @@ function AppContent() {
                              const newLessons = lessons.filter((_, i) => i !== idx);
                              setLessons(newLessons);
                            }}
-                           className="text-red-400 hover:text-red-600 bg-red-50 hover:bg-red-100 p-1.5 rounded-lg transition-colors ml-1"
+                           className="text-red-400 hover:text-red-600 bg-red-50 hover:bg-red-100 p-1.5 rounded-md transition-colors ml-1"
                            title="Remover aula"
                          >
                            <Trash2 size={16} />
                          </button>
                        </div>
 
-                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
-                         <div>
-                            <label className="text-xs font-semibold text-slate-500 mb-1 block">Título da Aula</label>
-                            <input
-                              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-corp-blue/20"
-                              value={lesson.title}
-                              onChange={(e) => {
-                                const newLessons = [...lessons];
-                                newLessons[idx] = { ...newLessons[idx], title: e.target.value };
-                                setLessons(newLessons);
-                              }}
-                            />
-                         </div>
-                         <div className="grid grid-cols-2 gap-4">
+                       <div className="pt-8 sm:pt-0">
+                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
                            <div>
-                              <label className="text-xs font-semibold text-slate-500 mb-1 block">Duração (Ex: 12:45)</label>
+                              <label className="text-xs font-semibold text-slate-500 mb-1 block">Título da Aula</label>
                               <input
                                 className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-corp-blue/20"
-                                value={lesson.duration}
+                                value={lesson.title}
                                 onChange={(e) => {
                                   const newLessons = [...lessons];
-                                  newLessons[idx] = { ...newLessons[idx], duration: e.target.value };
+                                  newLessons[idx] = { ...newLessons[idx], title: e.target.value };
                                   setLessons(newLessons);
                                 }}
                               />
                            </div>
-                           <div>
-                              <label className="text-xs font-semibold text-slate-500 mb-1 block">Youtube ID</label>
-                              <input
-                                placeholder="ex: iBY6EDSjEF4"
-                                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-corp-blue/20"
-                                value={lesson.youtubeId}
+                           <div className="grid grid-cols-2 gap-4">
+                             <div>
+                                <label className="text-xs font-semibold text-slate-500 mb-1 block">Duração (Ex: 12:45)</label>
+                                <input
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-corp-blue/20"
+                                  value={lesson.duration}
+                                  onChange={(e) => {
+                                    const newLessons = [...lessons];
+                                    newLessons[idx] = { ...newLessons[idx], duration: e.target.value };
+                                    setLessons(newLessons);
+                                  }}
+                                />
+                             </div>
+                             <div>
+                                <label className="text-xs font-semibold text-slate-500 mb-1 block">Youtube ID</label>
+                                <input
+                                  placeholder="ex: iBY6EDSjEF4"
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-corp-blue/20"
+                                  value={lesson.youtubeId}
+                                  onChange={(e) => {
+                                    const newLessons = [...lessons];
+                                    newLessons[idx] = { ...newLessons[idx], youtubeId: e.target.value };
+                                    setLessons(newLessons);
+                                  }}
+                                />
+                             </div>
+                           </div>
+                           <div className="md:col-span-2">
+                              <label className="text-xs font-semibold text-slate-500 mb-1 block">Descrição</label>
+                              <textarea
+                                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-corp-blue/20 custom-scrollbar"
+                                rows={2}
+                                value={lesson.description}
                                 onChange={(e) => {
                                   const newLessons = [...lessons];
-                                  newLessons[idx] = { ...newLessons[idx], youtubeId: e.target.value };
+                                  newLessons[idx] = { ...newLessons[idx], description: e.target.value };
                                   setLessons(newLessons);
                                 }}
                               />
                            </div>
-                         </div>
-                         <div className="md:col-span-2">
-                            <label className="text-xs font-semibold text-slate-500 mb-1 block">Descrição</label>
-                            <textarea
-                              className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-corp-blue/20 custom-scrollbar"
-                              rows={2}
-                              value={lesson.description}
-                              onChange={(e) => {
-                                const newLessons = [...lessons];
-                                newLessons[idx] = { ...newLessons[idx], description: e.target.value };
-                                setLessons(newLessons);
-                              }}
-                            />
-                         </div>
-                         <div className="grid grid-cols-2 gap-4 md:col-span-2">
-                           <div>
-                              <label className="text-xs font-semibold text-slate-500 mb-1 block">Módulo</label>
-                              <input
-                                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm"
-                                value={lesson.module}
-                                onChange={(e) => {
-                                  const newLessons = [...lessons];
-                                  newLessons[idx] = { ...newLessons[idx], module: e.target.value };
-                                  setLessons(newLessons);
-                                }}
-                              />
-                           </div>
-                           <div>
-                              <label className="text-xs font-semibold text-slate-500 mb-1 block">Nível</label>
-                              <select
-                                className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-corp-blue/20"
-                                value={lesson.level}
-                                onChange={(e) => {
-                                  const newLessons = [...lessons];
-                                  newLessons[idx] = { ...newLessons[idx], level: e.target.value };
-                                  setLessons(newLessons);
-                                }}
-                              >
-                                <option value="Iniciante">Iniciante</option>
-                                <option value="Intermediário">Intermediário</option>
-                                <option value="Avançado">Avançado</option>
-                              </select>
+                           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:col-span-2">
+                             <div>
+                                <label className="text-xs font-semibold text-slate-500 mb-1 block">Curso</label>
+                                <input
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-corp-blue/20"
+                                  value={lesson.course || ""}
+                                  placeholder="Ex: Curso Inicial de Importação"
+                                  onChange={(e) => {
+                                    const newLessons = [...lessons];
+                                    newLessons[idx] = { ...newLessons[idx], course: e.target.value };
+                                    setLessons(newLessons);
+                                  }}
+                                />
+                             </div>
+                             <div>
+                                <label className="text-xs font-semibold text-slate-500 mb-1 block">Módulo</label>
+                                <input
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm"
+                                  value={lesson.module}
+                                  onChange={(e) => {
+                                    const newLessons = [...lessons];
+                                    newLessons[idx] = { ...newLessons[idx], module: e.target.value };
+                                    setLessons(newLessons);
+                                  }}
+                                />
+                             </div>
+                             <div>
+                                <label className="text-xs font-semibold text-slate-500 mb-1 block">Nível</label>
+                                <select
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-corp-blue/20"
+                                  value={lesson.level}
+                                  onChange={(e) => {
+                                    const newLessons = [...lessons];
+                                    newLessons[idx] = { ...newLessons[idx], level: e.target.value };
+                                    setLessons(newLessons);
+                                  }}
+                                >
+                                  <option value="Iniciante">Iniciante</option>
+                                  <option value="Intermediário">Intermediário</option>
+                                  <option value="Avançado">Avançado</option>
+                                </select>
+                             </div>
                            </div>
                          </div>
                        </div>
@@ -2385,8 +2675,9 @@ function AppContent() {
                          duration: "00:00",
                          youtubeId: "",
                          description: "",
+                         course: "Curso Inicial de Importação",
                          module: "Módulo 1",
-                         level: "Iniciantes"
+                         level: "Iniciante"
                        }]);
                     }}
                     className="w-full border-2 border-dashed border-slate-300 rounded-xl p-4 text-center text-slate-500 font-semibold hover:border-corp-blue hover:text-corp-blue hover:bg-blue-50 transition-colors flex items-center justify-center gap-2"
@@ -2396,17 +2687,17 @@ function AppContent() {
                 </div>
               </div>
               
-              <div className="p-6 border-t border-slate-100 bg-white flex justify-end gap-3">
+              <div className="p-4 sm:p-6 border-t border-slate-100 bg-white flex flex-col sm:flex-row justify-end gap-3 shrink-0">
                 <button
                   onClick={() => setShowAdminCourse(false)}
-                  className="px-6 py-2.5 rounded-lg border border-slate-200 text-slate-600 font-semibold hover:bg-slate-50 transition-colors text-sm"
+                  className="w-full sm:w-auto px-6 py-2.5 rounded-lg border border-slate-200 text-slate-600 font-semibold hover:bg-slate-50 transition-colors text-sm order-2 sm:order-1"
                 >
                   Cancelar
                 </button>
                 <button
                   onClick={() => handleSaveCourses(lessons)}
                   disabled={isSavingCourse}
-                  className="px-6 py-2.5 rounded-lg bg-corp-blue text-white font-semibold hover:bg-[#1A284F] transition-colors text-sm shadow-md flex items-center gap-2 disabled:opacity-70"
+                  className="w-full sm:w-auto px-6 py-2.5 rounded-lg bg-corp-blue text-white font-semibold hover:bg-[#1A284F] transition-colors text-sm shadow-md flex items-center justify-center gap-2 disabled:opacity-70 order-1 sm:order-2"
                 >
                   {isSavingCourse ? <PlayCircle className="animate-spin w-4 h-4" /> : <Save size={16} />}
                   {"Salvar Cursos"}
@@ -2647,6 +2938,7 @@ function AppContent() {
                                   origin: debit.origin || 'China',
                                   shipMode: debit.shipMode || 'AIR',
                                   priceType: debit.priceType || 'FREIGHT_AND_DUTY',
+                                  paymentType: 'NORMAL',
                                 });
                                 setDebitItems(debit.items || []);
                                 setShowHistory(false);
@@ -2665,6 +2957,7 @@ function AppContent() {
                                   origin: debit.origin || 'China',
                                   shipMode: debit.shipMode || 'AIR',
                                   priceType: debit.priceType || 'FREIGHT_AND_DUTY',
+                                  paymentType: 'NORMAL',
                                 });
                                 setDebitItems(debit.items || []);
                                 setTimeout(() => {
@@ -2934,6 +3227,29 @@ function AppContent() {
                            </label>
                         </div>
                       )}
+                    </div>
+                  </div>
+                  <div className="col-span-2">
+                    <label className="label-corp">Tipo de Faturação</label>
+                    <div className="flex gap-4 mt-1">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="radio" value="NORMAL" checked={debitNoteForm.paymentType === 'NORMAL'} onChange={() => {
+                          setDebitNoteForm({...debitNoteForm, paymentType: 'NORMAL'});
+                        }} className="accent-corp-blue" />
+                        <span className="text-sm font-semibold">Normal</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="radio" value="SEPARATE_PAYMENT" checked={debitNoteForm.paymentType === 'SEPARATE_PAYMENT'} onChange={() => {
+                          setDebitNoteForm({...debitNoteForm, paymentType: 'SEPARATE_PAYMENT'});
+                        }} className="accent-corp-blue" />
+                        <span className="text-sm font-semibold">Pagamento Separado / Parcial</span>
+                      </label>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input type="radio" value="ADVANCE" checked={debitNoteForm.paymentType === 'ADVANCE'} onChange={() => {
+                          setDebitNoteForm({...debitNoteForm, paymentType: 'ADVANCE'});
+                        }} className="accent-corp-blue" />
+                        <span className="text-sm font-semibold">Adiantamento</span>
+                      </label>
                     </div>
                   </div>
                 </div>
@@ -3263,23 +3579,40 @@ function AppContent() {
           <div className="w-full h-1 bg-[#1A284F] mb-10"></div>
 
           {/* Summary Cards */}
-          <div className="grid grid-cols-3 gap-6 mb-10">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-10">
             <div className="bg-[#f8fafc] rounded-xl p-6 border border-[#f1f5f9]">
-              <p className="text-[10px] font-bold text-[#94a3b8] uppercase tracking-widest mb-2">Moeda Principal</p>
-              <p className="text-xl font-bold text-[#1e293b]">{moeda}</p>
+              <p className="text-[10px] font-bold text-[#94a3b8] uppercase tracking-widest mb-2">Volume (CBM) Calculado</p>
+              <p className="text-xl font-bold text-[#1e293b]">{results.cbmTotal.toFixed(4)} m³</p>
             </div>
             <div className="bg-[#f8fafc] rounded-xl p-6 border border-[#f1f5f9]">
-              <p className="text-[10px] font-bold text-[#94a3b8] uppercase tracking-widest mb-2">Modalidade de Transporte</p>
+              <p className="text-[10px] font-bold text-[#94a3b8] uppercase tracking-widest mb-2">Modalidade</p>
               <p className="text-xl font-bold text-[#1e293b] uppercase">{tipoTransporte}</p>
             </div>
             <div className="bg-[#f8fafc] rounded-xl p-6 border border-[#f1f5f9]">
-              <p className="text-[10px] font-bold text-[#94a3b8] uppercase tracking-widest mb-2">{tipoTransporte === 'maritimo' ? 'Volume & Peso Total' : 'Peso Total'}</p>
+              <p className="text-[10px] font-bold text-[#94a3b8] uppercase tracking-widest mb-2">Peso Real da Carga</p>
               <p className="text-xl font-bold text-[#1e293b]">
-                {tipoTransporte === 'maritimo' ? `${results.cbmFaturado.toFixed(4)} m³ / ` : ''}
-                {results.pesoFaturado.toFixed(2)} kg
+                {results.pesoTotal.toFixed(2)} kg
+              </p>
+            </div>
+            <div className="bg-[#e0f2fe] rounded-xl p-6 border border-[#bae6fd]">
+              <p className="text-[10px] font-bold text-[#0284c7] uppercase tracking-widest mb-2">Peso a Pagar (Base de Cobrança)</p>
+              <p className="text-2xl font-bold text-[#0369a1]">
+                {results.pesoTaxavel.toFixed(2)} kg
+              </p>
+              <p className="text-[9px] mt-1.5 text-[#0284c7] font-semibold uppercase">
+                {results.cobrarPor === 'volume' ? '⚠️ Ajustado pelo espaço que a carga ocupa' : '✔️ Cobrado pelo peso real (físico)'}
               </p>
             </div>
           </div>
+          
+          {tipoTransporte === 'rodoviario' && !destinoRodoviario && (
+            <div className="bg-orange-50 border border-orange-200 p-6 rounded-xl mb-10">
+              <p className="text-orange-800 font-bold text-lg mb-2">Aviso de Tarifa Base:</p>
+              <p className="text-orange-700 text-sm">
+                Para qual cidade/província vai enviar a carga para calcular o custo estimado do frete? O cálculo exige a seleção de um destino na secção de Adunairo.
+              </p>
+            </div>
+          )}
 
           {/* Table */}
           <table className="w-full text-left border-collapse mb-12">
@@ -3287,6 +3620,7 @@ function AppContent() {
               <tr className="bg-[#0f172a] text-[#ffffff] text-[10px] uppercase tracking-widest">
                 <th className="py-4 px-6 font-semibold">Descrição do Item</th>
                 <th className="py-4 px-6 font-semibold text-center">Visual</th>
+                <th className="py-4 px-6 font-semibold text-center">{tipoTransporte === 'maritimo' ? 'Vol./Peso (Un.)' : 'Peso (Un.)'}</th>
                 <th className="py-4 px-6 font-semibold text-center">Qtd</th>
                 <th className="py-4 px-6 font-semibold text-right">Unitário</th>
                 <th className="py-4 px-6 font-semibold text-right">Envio Forn.</th>
@@ -3294,9 +3628,23 @@ function AppContent() {
               </tr>
             </thead>
             <tbody className="text-[#334155] text-sm">
-              {produtos.map((p) => (
+              {produtos.map((p) => {
+                const qtd = Number(p.quantidade) || 0;
+                const vols = (p.quantidadeCaixas !== undefined && p.quantidadeCaixas !== '') 
+                  ? Number(p.quantidadeCaixas) 
+                  : qtd;
+                const cbmUnit = (Number(p.cbmUnitario) || 0) > 0 
+                  ? Number(p.cbmUnitario) 
+                  : (Number(p.comprimento) || 0) * (Number(p.largura) || 0) * (Number(p.altura) || 0) / 1000000;
+                const cbmItem = cbmUnit * vols * (aplicarMargemSeguranca ? 1.2 : 1);
+                const pesoItem = (Number(p.pesoUnitario) || 0) * qtd;
+                const pesoUnit = Number(p.pesoUnitario) || 0;
+
+                return (
                 <tr key={p.id} className="border-b border-[#f1f5f9]">
-                  <td className="py-6 px-6 font-semibold text-[#0f172a]">{p.descricao || 'Mercadoria Geral'}</td>
+                  <td className="py-6 px-6 text-[#0f172a] font-semibold">
+                    {p.descricao || 'Mercadoria Geral'}
+                  </td>
                   <td className="py-6 px-6 text-center">
                     {p.imageUrl ? (
                       <div className="w-16 h-16 rounded-md mx-auto overflow-hidden bg-white border border-[#f1f5f9] flex items-center justify-center">
@@ -3313,6 +3661,10 @@ function AppContent() {
                       </div>
                     )}
                   </td>
+                  <td className="py-6 px-6 text-center whitespace-nowrap text-xs text-[#475569]">
+                    {tipoTransporte === 'maritimo' && cbmUnit > 0 && <div className="mb-1">{cbmUnit.toFixed(4)} m³</div>}
+                    {pesoUnit > 0 ? <div>{pesoUnit.toFixed(2)} kg</div> : (cbmUnit <= 0 && '-')}
+                  </td>
                   <td className="py-6 px-6 text-center">{p.quantidade}</td>
                   <td className="py-6 px-6 text-right">{formatoMoeda(Number(p.valorUnitario) || 0)}</td>
                   <td className="py-6 px-6 text-right">{formatoMoeda(Number(p.taxaEnvioFornecedor) || 0)}</td>
@@ -3320,7 +3672,8 @@ function AppContent() {
                     {formatoMoeda(((Number(p.valorUnitario) || 0) * (Number(p.quantidade) || 0)) + (Number(p.taxaEnvioFornecedor) || 0))}
                   </td>
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
 
@@ -3411,7 +3764,11 @@ function AppContent() {
           </div>
           
           <div className="text-center py-4 bg-[#2D4C8C] text-white">
-            <h1 className="text-3xl font-black tracking-widest">NOTA DE DÉBITO (DEBIT NOTE)</h1>
+            <h1 className="text-3xl font-black tracking-widest">
+              {debitNoteForm.paymentType === 'SEPARATE_PAYMENT' ? 'NOTA DE DÉBITO (PAGAMENTO SEPARADO)' :
+               debitNoteForm.paymentType === 'ADVANCE' ? 'NOTA DE DÉBITO (ADIANTAMENTO)' :
+               'NOTA DE DÉBITO (DEBIT NOTE)'}
+            </h1>
           </div>
 
           <div className="px-8 py-4 flex justify-between items-center border-b-2 border-slate-200 text-xl font-bold text-[#1A284F]">
