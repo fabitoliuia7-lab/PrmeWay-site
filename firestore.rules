@@ -74,11 +74,7 @@ service cloud.firestore {
     }
 
     function isValidQuote(data) {
-      return data.userId == request.auth.uid &&
-             data.total is number && data.total >= 0 &&
-             data.tipoTransporte in ['maritimo', 'aereo'] &&
-             data.produtos is list &&
-             data.createdAt is timestamp;
+      return data.userId == request.auth.uid;
     }
 
     function isValidTracking(data) {
@@ -87,6 +83,10 @@ service cloud.firestore {
 
     function isValidSettings(data) {
       return data.lessons is list;
+    }
+
+    function isValidDebitNote(data) {
+      return data.userId == request.auth.uid;
     }
 
     // ===============================================================
@@ -118,6 +118,13 @@ service cloud.firestore {
       allow read: if true;
       allow create, update: if isAdmin() && isValidSettings(request.resource.data);
       allow delete: if isAdmin();
+    }
+
+    match /debitNotes/{debitId} {
+      allow read: if isDocOwner() || isAdmin();
+      allow create: if isAuthenticated() && isValidDebitNote(request.resource.data);
+      allow update: if isDocOwner() && isValidDebitNote(request.resource.data) && isAdmin();
+      allow delete: if isDocOwner() || isAdmin();
     }
   }
 }

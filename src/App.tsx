@@ -213,6 +213,9 @@ interface CalculationResult {
   pesoVolumetrico: number;
   pesoTaxavel: number;
   cobrarPor: 'volume' | 'peso';
+  valorDesconto: number;
+  totalFinal: number;
+  couponCodeApplied?: string;
 }
 
 // --- Components ---
@@ -420,6 +423,11 @@ function AppContent() {
   const [calcularRevenda, setCalcularRevenda] = useState(false);
   const [margemLucro, setMargemLucro] = useState<number | string>(0);
   const [custosAdicionais, setCustosAdicionais] = useState<number | string>(0);
+  
+  // Coupon States
+  const [couponInput, setCouponInput] = useState('');
+  const [activeCoupon, setActiveCoupon] = useState<{ code: string; type: 'percentage' | 'fixed'; value: number } | null>(null);
+  const [couponMessage, setCouponMessage] = useState<{ text: string; isError: boolean } | null>(null);
   
   // Tracking State
   const [trackingCode, setTrackingCode] = useState('');
@@ -694,6 +702,9 @@ function AppContent() {
         taxaCambio,
         nomeCliente,
         total: results.total,
+        totalFinal: results.totalFinal,
+        valorDesconto: results.valorDesconto,
+        couponCodeApplied: results.couponCodeApplied || '',
         tipoTransporte,
         taxaProcessamento,
         comissaoServicos,
@@ -778,7 +789,10 @@ function AppContent() {
     const valorTaxaProc = subtotalProdutos * (Number(taxaProcessamento) / 100);
     const valorComissao = subtotalProdutos * (Number(comissaoServicos) / 100);
     
-    const cbmFaturado = cbmTotal > 0 ? Math.max(0.1, cbmTotal) : 0;
+    let cbmFaturado = cbmTotal > 0 ? Math.max(0.1, cbmTotal) : 0;
+    if (tipoTransporte === 'maritimo' && pesoTotal > 0) {
+      cbmFaturado = Math.max(cbmFaturado, pesoTotal / 1000);
+    }
     const pesoFaturado = pesoTotal > 0 ? Math.max(0.5, pesoTotal) : 0;
     
     let pesoVolumetrico = 0;
@@ -830,13 +844,26 @@ function AppContent() {
       produtos.forEach(p => {
         const qtd = Number(p.quantidade) || 0;
         const pesoKg = Number(p.pesoUnitario) || 0;
-        const weightLine = pesoKg * qtd;
-        totalWeightTotal += weightLine;
+        const physicalWeightLine = pesoKg * qtd;
+
+        // Calcular volume e peso volumetrico para esta linha de produto
+        const vols = (p.quantidadeCaixas !== undefined && p.quantidadeCaixas !== '') 
+          ? Number(p.quantidadeCaixas) 
+          : qtd;
+        const cbmUnit = (Number(p.cbmUnitario) || 0) > 0 
+          ? Number(p.cbmUnitario) 
+          : (Number(p.comprimento) || 0) * (Number(p.largura) || 0) * (Number(p.altura) || 0) / 1000000;
+        const cbmLine = cbmUnit * vols * (aplicarMargemSeguranca ? 1.2 : 1);
+        const volumetricWeightLine = cbmLine * 166.67;
+
+        // O peso taxável desta linha de produto é o maior entre peso real e volumétrico
+        const taxableWeightLine = Math.max(physicalWeightLine, volumetricWeightLine);
+        totalWeightTotal += taxableWeightLine;
 
         if (p.categoriaAerea === 'normal' || p.categoriaAerea === 'sensitive') {
           const rate = p.categoriaAerea === 'normal' ? 1600 : 2000;
-          totalWeightWeightBased += weightLine;
-          totalCostWeightBased += weightLine * rate;
+          totalWeightWeightBased += taxableWeightLine;
+          totalCostWeightBased += taxableWeightLine * rate;
         } else {
           let unitPrice = 0;
           switch (p.categoriaAerea) {
@@ -888,6 +915,16 @@ function AppContent() {
       total = (total + Number(custosAdicionais)) * (1 + (Number(margemLucro) / 100));
     }
 
+    let valorDesconto = 0;
+    if (activeCoupon) {
+      if (activeCoupon.type === 'percentage') {
+        valorDesconto = total * (activeCoupon.value / 100);
+      } else if (activeCoupon.type === 'fixed') {
+        valorDesconto = activeCoupon.value;
+      }
+    }
+    const totalFinal = Math.max(0, total - valorDesconto);
+
     return {
       subtotalProdutos,
       valorTaxaProc,
@@ -904,9 +941,12 @@ function AppContent() {
       pesoFaturado,
       pesoVolumetrico,
       pesoTaxavel,
-      cobrarPor
+      cobrarPor,
+      valorDesconto,
+      totalFinal,
+      couponCodeApplied: activeCoupon?.code
     };
-  }, [produtos, taxaProcessamento, comissaoServicos, taxaLevantamento, tipoTransporte, taxasAduaneiras, freteInternacional, taxaEnvioLocal, calcularRevenda, margemLucro, custosAdicionais, moeda, taxaCambio, aplicarMargemSeguranca, destinoEntrega, taxaEntregaCBM, destinoRodoviario]);
+  }, [produtos, taxaProcessamento, comissaoServicos, taxaLevantamento, tipoTransporte, taxasAduaneiras, freteInternacional, taxaEnvioLocal, calcularRevenda, margemLucro, custosAdicionais, moeda, taxaCambio, aplicarMargemSeguranca, destinoEntrega, taxaEntregaCBM, destinoRodoviario, activeCoupon]);
 
   // --- Handlers ---
 
@@ -939,6 +979,40 @@ function AppContent() {
     setProdutos(prev => prev.map(p => p.id === id ? { ...p, [field]: value } : p));
   };
 
+  const handleApplyCoupon = () => {
+    const code = couponInput.trim().toUpperCase();
+    if (!code) {
+      setCouponMessage({ text: 'Por favor, digite um código de cupom.', isError: true });
+      return;
+    }
+
+    const coupons: Record<string, { type: 'percentage' | 'fixed'; value: number }> = {
+      'PRIME10': { type: 'percentage', value: 10 },
+      'PRIME15': { type: 'percentage', value: 15 },
+      'PRIME20': { type: 'percentage', value: 20 },
+      'BEMVINDO': { type: 'percentage', value: 5 },
+      'LOGISTICA5': { type: 'percentage', value: 5 },
+      'VIP25': { type: 'percentage', value: 25 },
+      'DESCONTO1000': { type: 'fixed', value: 1000 }
+    };
+
+    if (coupons[code]) {
+      setActiveCoupon({
+        code,
+        ...coupons[code]
+      });
+      setCouponMessage({ text: `Cupom ${code} aplicado com sucesso!`, isError: false });
+    } else {
+      setCouponMessage({ text: 'Cupom inválido ou expirado.', isError: true });
+    }
+  };
+
+  const handleRemoveCoupon = () => {
+    setActiveCoupon(null);
+    setCouponInput('');
+    setCouponMessage(null);
+  };
+
   const limparTudo = () => {
     if (window.confirm("Resetar todos os dados da cotação atual?")) {
       setProdutos([{
@@ -967,6 +1041,9 @@ function AppContent() {
       setCalcularRevenda(false);
       setMargemLucro(0);
       setCustosAdicionais(0);
+      setActiveCoupon(null);
+      setCouponInput('');
+      setCouponMessage(null);
     }
   };
 
@@ -1042,6 +1119,71 @@ function AppContent() {
     setFraudResult(null);
   };
 
+  const preencherDebitNoteComCotacao = () => {
+    let shipMode = 'AIR';
+    if (tipoTransporte === 'maritimo') {
+      shipMode = 'SEA';
+    } else if (tipoTransporte === 'rodoviario') {
+      shipMode = 'SEA';
+    }
+
+    let defaultPrice = '';
+    if (shipMode === 'SEA') {
+      defaultPrice = freteInternacional ? String(freteInternacional) : '21450';
+    } else {
+      defaultPrice = '1600';
+    }
+
+    const items: DebitItem[] = produtos.map((p, idx) => {
+      const qtd = Number(p.quantidade) || 0;
+      const vols = (p.quantidadeCaixas !== undefined && p.quantidadeCaixas !== '') 
+        ? Number(p.quantidadeCaixas) 
+        : qtd;
+      const cbmUnit = (Number(p.cbmUnitario) || 0) > 0 
+        ? Number(p.cbmUnitario) 
+        : (Number(p.comprimento) || 0) * (Number(p.largura) || 0) * (Number(p.altura) || 0) / 1000000;
+      
+      const cbmItem = cbmUnit * vols * (aplicarMargemSeguranca ? 1.2 : 1);
+      const pesoItem = (Number(p.pesoUnitario) || 0) * qtd;
+
+      let actualAmount = '';
+      let chargeableAmount = '';
+
+      if (shipMode === 'SEA') {
+        actualAmount = cbmItem > 0 ? cbmItem.toFixed(4) : '0';
+        chargeableAmount = cbmItem > 0 || pesoItem > 0 ? Math.max(cbmItem, pesoItem / 1000).toFixed(4) : '0';
+      } else {
+        actualAmount = pesoItem > 0 ? pesoItem.toFixed(2) : '0';
+        const volumetricWeight = cbmItem * 166.67;
+        chargeableAmount = pesoItem > 0 || cbmItem > 0 ? Math.max(pesoItem, volumetricWeight).toFixed(2) : '0';
+      }
+
+      return {
+        id: (Date.now() + idx).toString(),
+        orderNumber: `PEDIDO-${idx + 1}`,
+        cargoDescription: p.descricao || 'Mercadoria Geral',
+        pkgs: vols,
+        actualAmount,
+        chargeableAmount,
+        unitPrice: defaultPrice,
+        unitType: shipMode === 'AIR' ? 'KG' : 'CBM'
+      };
+    });
+
+    setDebitNoteForm({
+      clientInfo: nomeCliente || '',
+      operatorInfo: user?.displayName || 'PrimeWay Operator',
+      idCode: `PW-${quoteRefCode}`,
+      origin: 'China',
+      shipMode: shipMode as 'AIR' | 'SEA',
+      priceType: 'FREIGHT_AND_DUTY',
+      paymentType: 'NORMAL',
+    });
+
+    setDebitItems(items);
+    setShowDebitNoteModal(true);
+  };
+
   const gerarDebitNotePDF = async () => {
     const element = document.getElementById('debit-note-print-area');
     if (!element) {
@@ -1064,6 +1206,7 @@ function AppContent() {
           });
         } catch (saveError) {
           console.error("Error saving debit note to history:", saveError);
+          handleFirestoreError(saveError, OperationType.CREATE, 'debitNotes');
         }
       }
 
@@ -1519,7 +1662,7 @@ function AppContent() {
                   <Shield size={16} /> Admin Rastreios
                 </button>
                 <button 
-                  onClick={() => setShowDebitNoteModal(true)}
+                  onClick={preencherDebitNoteComCotacao}
                   className="text-sm font-bold text-corp-blue hover:text-corp-blue-light transition-colors border border-corp-blue/30 px-4 py-2 rounded-lg flex items-center justify-center gap-2 bg-blue-50/50"
                 >
                   <Search size={16} /> Emitir Fatura (Debit)
@@ -2081,12 +2224,29 @@ function AppContent() {
               <div className="space-y-8">
                 <div>
                   <span className="block text-xs text-white/40 mb-2 uppercase tracking-widest font-semibold">Investimento Total</span>
-                  <div className="flex items-baseline gap-3 flex-wrap">
-                    <span className="text-xl font-semibold text-corp-blue-light">{moeda}</span>
-                    <span className="text-4xl md:text-6xl font-heading font-bold tracking-tighter break-all">
-                      {formatoMoeda(results.total)}
-                    </span>
-                  </div>
+                  {results.valorDesconto > 0 ? (
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 text-white/40 line-through text-sm">
+                        <span>{moeda} {formatoMoeda(results.total)}</span>
+                      </div>
+                      <div className="flex items-baseline gap-3 flex-wrap">
+                        <span className="text-xl font-semibold text-emerald-400">{moeda}</span>
+                        <span className="text-4xl md:text-6xl font-heading font-bold tracking-tighter text-emerald-400 break-all">
+                          {formatoMoeda(results.totalFinal)}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-emerald-400 font-bold tracking-wider uppercase mt-1">
+                        Cupom aplicado: {activeCoupon?.code} (-{activeCoupon?.type === 'percentage' ? `${activeCoupon.value}%` : `${moeda} ${activeCoupon.value}`})
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="flex items-baseline gap-3 flex-wrap">
+                      <span className="text-xl font-semibold text-corp-blue-light">{moeda}</span>
+                      <span className="text-4xl md:text-6xl font-heading font-bold tracking-tighter break-all">
+                        {formatoMoeda(results.total)}
+                      </span>
+                    </div>
+                  )}
                 </div>
                 
                 <div className="pt-6 border-t border-white/10 space-y-4">
@@ -2098,6 +2258,80 @@ function AppContent() {
                     <span className="text-white/40">Peso Faturado</span>
                     <span className="text-corp-blue-light">{results.pesoFaturado.toFixed(1)} kg</span>
                   </div>
+                </div>
+
+                {/* Coupon Application Panel */}
+                <div className="pt-6 border-t border-white/10 space-y-3">
+                  <span className="block text-xs text-white/40 uppercase tracking-widest font-semibold mb-1">Cupom de Desconto</span>
+                  {activeCoupon ? (
+                    <div className="bg-emerald-500/10 border border-emerald-500/30 rounded-xl p-3 flex items-center justify-between">
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-1">
+                          <Check size={12} /> {activeCoupon.code} Ativo
+                        </p>
+                        <p className="text-[10px] text-white/60">
+                          Desconto de {activeCoupon.type === 'percentage' ? `${activeCoupon.value}%` : `${moeda} ${formatoMoeda(activeCoupon.value)}`}
+                        </p>
+                      </div>
+                      <button 
+                        onClick={handleRemoveCoupon}
+                        className="text-[10px] font-bold text-red-400 hover:text-red-300 uppercase tracking-wider pl-2"
+                      >
+                        Remover
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="flex gap-2">
+                        <input 
+                          type="text"
+                          value={couponInput}
+                          onChange={(e) => {
+                            setCouponInput(e.target.value);
+                            if (couponMessage) setCouponMessage(null);
+                          }}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                              e.preventDefault();
+                              handleApplyCoupon();
+                            }
+                          }}
+                          className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs font-semibold text-white placeholder:text-white/30 focus:outline-none focus:border-white/30 uppercase"
+                          placeholder="Digite o cupom (Ex: PRIME10)"
+                        />
+                        <button 
+                          onClick={handleApplyCoupon}
+                          className="bg-white text-corp-blue font-bold px-3 py-2 rounded-xl text-xs hover:bg-slate-100 transition-all uppercase tracking-wider shrink-0"
+                        >
+                          Aplicar
+                        </button>
+                      </div>
+                      {couponMessage && (
+                        <p className={`text-[10px] font-semibold ${couponMessage.isError ? 'text-red-400' : 'text-emerald-400'}`}>
+                          {couponMessage.text}
+                        </p>
+                      )}
+                      
+                      {/* Suggestions list */}
+                      <div className="pt-1.5">
+                        <p className="text-[9px] text-white/30 font-semibold uppercase tracking-wider mb-1">Cupons Disponíveis:</p>
+                        <div className="flex flex-wrap gap-1">
+                          {['PRIME10', 'BEMVINDO', 'PRIME15'].map(suggestedCode => (
+                            <button
+                              key={suggestedCode}
+                              onClick={() => {
+                                setCouponInput(suggestedCode);
+                                if (couponMessage) setCouponMessage(null);
+                              }}
+                              className="text-[8px] font-bold px-1.5 py-0.5 bg-white/5 hover:bg-white/10 rounded border border-white/10 text-white/70 hover:text-white transition-all uppercase"
+                            >
+                              {suggestedCode}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
                 
                 <div className="pt-6 space-y-3">
@@ -2121,6 +2355,14 @@ function AppContent() {
                     )} 
                     {isGeneratingPdf ? 'Gerando...' : 'Exportar PDF'}
                   </button>
+                  {isAdmin && (
+                    <button 
+                      onClick={preencherDebitNoteComCotacao}
+                      className="w-full btn-modern-primary !bg-corp-blue/10 !text-white border border-white/20 !shadow-none hover:!bg-corp-blue/20 !py-3 flex items-center justify-center gap-2"
+                    >
+                      <FileText size={18} /> Emitir Fatura (Debit)
+                    </button>
+                  )}
                   <button 
                     onClick={limparTudo} 
                     className="w-full text-[10px] font-semibold uppercase tracking-[0.3em] text-white/30 hover:text-white transition-all text-center py-2 flex items-center justify-center gap-2"
@@ -3581,8 +3823,10 @@ function AppContent() {
           {/* Summary Cards */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mb-10">
             <div className="bg-[#f8fafc] rounded-xl p-6 border border-[#f1f5f9]">
-              <p className="text-[10px] font-bold text-[#94a3b8] uppercase tracking-widest mb-2">Volume (CBM) Calculado</p>
-              <p className="text-xl font-bold text-[#1e293b]">{results.cbmTotal.toFixed(4)} m³</p>
+              <p className="text-[10px] font-bold text-[#94a3b8] uppercase tracking-widest mb-2">Volume Real da Carga</p>
+              <p className="text-xl font-bold text-[#1e293b]">
+                {results.cbmTotal.toFixed(4)} m³
+              </p>
             </div>
             <div className="bg-[#f8fafc] rounded-xl p-6 border border-[#f1f5f9]">
               <p className="text-[10px] font-bold text-[#94a3b8] uppercase tracking-widest mb-2">Modalidade</p>
@@ -3595,13 +3839,31 @@ function AppContent() {
               </p>
             </div>
             <div className="bg-[#e0f2fe] rounded-xl p-6 border border-[#bae6fd]">
-              <p className="text-[10px] font-bold text-[#0284c7] uppercase tracking-widest mb-2">Peso a Pagar (Base de Cobrança)</p>
-              <p className="text-2xl font-bold text-[#0369a1]">
-                {results.pesoTaxavel.toFixed(2)} kg
-              </p>
-              <p className="text-[9px] mt-1.5 text-[#0284c7] font-semibold uppercase">
-                {results.cobrarPor === 'volume' ? '⚠️ Ajustado pelo espaço que a carga ocupa' : '✔️ Cobrado pelo peso real (físico)'}
-              </p>
+              {tipoTransporte === 'maritimo' ? (
+                <>
+                  <p className="text-[10px] font-bold text-[#0284c7] uppercase tracking-widest mb-2">Volume Faturado (Base de Cobrança)</p>
+                  <p className="text-2xl font-bold text-[#0369a1]">
+                    {results.cbmFaturado.toFixed(4)} m³
+                  </p>
+                  <p className="text-[9px] mt-1.5 text-[#0284c7] font-semibold uppercase">
+                    {results.cbmFaturado > results.cbmTotal
+                      ? '⚠️ Ajustado por peso excessivo (Dense Cargo)'
+                      : '✔️ Cobrado pelo volume real (físico)'}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-[10px] font-bold text-[#0284c7] uppercase tracking-widest mb-2">Peso a Pagar (Base de Cobrança)</p>
+                  <p className="text-2xl font-bold text-[#0369a1]">
+                    {results.pesoTaxavel.toFixed(2)} kg
+                  </p>
+                  <p className="text-[9px] mt-1.5 text-[#0284c7] font-semibold uppercase">
+                    {results.cobrarPor === 'volume' 
+                      ? '⚠️ Ajustado pelo peso volumétrico' 
+                      : '✔️ Cobrado pelo peso real (físico)'}
+                  </p>
+                </>
+              )}
             </div>
           </div>
           
@@ -3724,10 +3986,18 @@ function AppContent() {
                     )}
                   </>
                 )}
+                {results.valorDesconto > 0 && (
+                  <div className="flex justify-between text-emerald-600 font-semibold pt-2 border-t border-[#f1f5f9]">
+                    <span>Cupom de Desconto ({activeCoupon?.code}):</span>
+                    <span>- {moeda} {formatoMoeda(results.valorDesconto)}</span>
+                  </div>
+                )}
               </div>
               <div className="bg-[#1A284F] text-[#ffffff] p-6 rounded-xl flex flex-wrap md:flex-nowrap justify-between items-center gap-2">
-                <span className="font-bold uppercase tracking-widest text-xs whitespace-nowrap">Total Estimado</span>
-                <span className="text-2xl sm:text-3xl font-black whitespace-nowrap tracking-tight">{moeda} {formatoMoeda(results.total)}</span>
+                <span className="font-bold uppercase tracking-widest text-xs whitespace-nowrap">
+                  {results.valorDesconto > 0 ? 'Total Estimado com Desconto' : 'Total Estimado'}
+                </span>
+                <span className="text-2xl sm:text-3xl font-black whitespace-nowrap tracking-tight">{moeda} {formatoMoeda(results.totalFinal)}</span>
               </div>
             </div>
           </div>

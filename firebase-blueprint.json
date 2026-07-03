@@ -52,6 +52,25 @@
         }
       },
       "required": ["lessons"]
+    },
+    "DebitNote": {
+      "title": "Debit Note",
+      "description": "Information about a debit note generated.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "The user who created the debit note." },
+        "clientInfo": { "type": "string" },
+        "operatorInfo": { "type": "string" },
+        "idCode": { "type": "string" },
+        "origin": { "type": "string" },
+        "shipMode": { "type": "string" },
+        "priceType": { "type": "string" },
+        "paymentType": { "type": "string" },
+        "items": { "type": "array" },
+        "totalMZN": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "clientInfo", "totalMZN", "createdAt"]
     }
   },
   "firestore": {
@@ -70,6 +89,10 @@
     "/settings/{settingId}": {
       "schema": "Settings",
       "description": "Global configuration documents like courses playlist."
+    },
+    "/debitNotes/{debitId}": {
+      "schema": "DebitNote",
+      "description": "Debit notes history for clients."
     }
   }
 }
