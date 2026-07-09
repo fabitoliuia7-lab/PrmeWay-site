@@ -918,9 +918,9 @@ function AppContent() {
     let valorDesconto = 0;
     if (activeCoupon) {
       if (activeCoupon.type === 'percentage') {
-        valorDesconto = total * (activeCoupon.value / 100);
+        valorDesconto = custosEnvio * (activeCoupon.value / 100);
       } else if (activeCoupon.type === 'fixed') {
-        valorDesconto = activeCoupon.value;
+        valorDesconto = Math.min(activeCoupon.value, custosEnvio);
       }
     }
     const totalFinal = Math.max(0, total - valorDesconto);
@@ -987,13 +987,10 @@ function AppContent() {
     }
 
     const coupons: Record<string, { type: 'percentage' | 'fixed'; value: number }> = {
-      'PRIME10': { type: 'percentage', value: 10 },
-      'PRIME15': { type: 'percentage', value: 15 },
-      'PRIME20': { type: 'percentage', value: 20 },
       'BEMVINDO': { type: 'percentage', value: 5 },
-      'LOGISTICA5': { type: 'percentage', value: 5 },
-      'VIP25': { type: 'percentage', value: 25 },
-      'DESCONTO1000': { type: 'fixed', value: 1000 }
+      'VOANDO': { type: 'percentage', value: 10 },
+      '#VOANDO': { type: 'percentage', value: 10 },
+      'VOANDO10': { type: 'percentage', value: 10 }
     };
 
     if (coupons[code]) {
@@ -2218,7 +2215,7 @@ function AppContent() {
 
           {/* Results Column */}
           <div id="calculation-results" className="space-y-6">
-            <div className="glass-card !bg-corp-blue !border-none p-8 text-white rounded-2xl sticky top-24">
+            <div className="glass-card !bg-corp-blue !border-none p-5 sm:p-8 text-white rounded-2xl sticky top-24">
               <span className="text-[10px] font-semibold uppercase tracking-[0.4em] text-white/50 mb-6 block">Resultado</span>
               
               <div className="space-y-8">
@@ -2297,7 +2294,7 @@ function AppContent() {
                             }
                           }}
                           className="flex-1 bg-white/5 border border-white/10 rounded-xl px-3 py-2 text-xs font-semibold text-white placeholder:text-white/30 focus:outline-none focus:border-white/30 uppercase"
-                          placeholder="Digite o cupom (Ex: PRIME10)"
+                          placeholder="Cupom (Ex: BEMVINDO)"
                         />
                         <button 
                           onClick={handleApplyCoupon}
@@ -2316,7 +2313,7 @@ function AppContent() {
                       <div className="pt-1.5">
                         <p className="text-[9px] text-white/30 font-semibold uppercase tracking-wider mb-1">Cupons Disponíveis:</p>
                         <div className="flex flex-wrap gap-1">
-                          {['PRIME10', 'BEMVINDO', 'PRIME15'].map(suggestedCode => (
+                          {['BEMVINDO'].map(suggestedCode => (
                             <button
                               key={suggestedCode}
                               onClick={() => {
@@ -2338,7 +2335,7 @@ function AppContent() {
                   <button 
                     onClick={handleSaveQuote}
                     disabled={isSaving}
-                    className="w-full btn-modern-primary !bg-corp-orange !text-white !shadow-none hover:!bg-corp-orange/90 disabled:opacity-50 !py-3"
+                    className="w-full btn-modern-primary !bg-corp-orange !text-white !shadow-none hover:!bg-corp-orange/90 disabled:opacity-50 !py-3 !px-4"
                   >
                     {isSaving ? <RotateCcw size={18} className="animate-spin" /> : <Save size={18} />} 
                     Salvar
@@ -2346,7 +2343,7 @@ function AppContent() {
                   <button 
                     onClick={imprimirFatura} 
                     disabled={isGeneratingPdf}
-                    className="w-full btn-modern-primary !bg-white !text-corp-blue !shadow-none hover:!bg-slate-100 !py-3 disabled:opacity-50"
+                    className="w-full btn-modern-primary !bg-white !text-corp-blue !shadow-none hover:!bg-slate-100 !py-3 disabled:opacity-50 !px-4"
                   >
                     {isGeneratingPdf ? (
                       <RotateCcw size={18} className="animate-spin" />
@@ -2358,7 +2355,7 @@ function AppContent() {
                   {isAdmin && (
                     <button 
                       onClick={preencherDebitNoteComCotacao}
-                      className="w-full btn-modern-primary !bg-corp-blue/10 !text-white border border-white/20 !shadow-none hover:!bg-corp-blue/20 !py-3 flex items-center justify-center gap-2"
+                      className="w-full btn-modern-primary !bg-corp-blue/10 !text-white border border-white/20 !shadow-none hover:!bg-corp-blue/20 !py-3 flex items-center justify-center gap-2 !px-4"
                     >
                       <FileText size={18} /> Emitir Fatura (Debit)
                     </button>
