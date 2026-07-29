@@ -47,7 +47,8 @@ service cloud.firestore {
     function isAdmin() {
       return isAuthenticated() &&
         (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-         request.auth.token.email == "fabitoliuia7@gmail.com");
+         request.auth.token.email == "fabitoliuia7@gmail.com" ||
+         request.auth.token.email == "comercial@primewayinvest.com");
     }
 
     function isValidEmail(email) {
