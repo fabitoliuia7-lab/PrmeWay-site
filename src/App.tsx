@@ -181,6 +181,92 @@ class ErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundarySta
 
 // --- Types ---
 
+export interface VeiculoItem {
+  id: string;
+  tipo: string; // 'bomba_betao' | 'camiao_basculante' | 'camiao_carga' | 'maquina_pesada' | 'veiculo_ligeiro' | 'autocarro'
+  descricao: string;
+  chassisEngine: string;
+  valorFob: number | string;
+  valorFreteSeguro: number | string;
+  valorCif: number | string;
+  quantidade: number | string;
+  portoOrigem: string;
+  portoDestino: string;
+  comprimentoMm: number | string;
+  larguraMm: number | string;
+  alturaMm: number | string;
+  pesoTons: number | string;
+  
+  // Impostos Aduaneiros Principais
+  direitosPerc: number | string;
+  icePerc: number | string;
+  ivaPerc: number | string;
+
+  // Despesas Aduaneiras Regulamentares
+  tsaAduaneiroMzn: number | string;  // Taxa de Serviços Aduaneiros (1000 MT)
+  taxaRadioMzn: number | string;      // Taxa de Rádio (0 MT)
+  mcnetMzn: number | string;          // MCNET Janela Única (1550 MT)
+  kudumbaMzn: number | string;        // Kudumba Scanner (2250 MT)
+
+  // Despesas Locais & Portuárias
+  agenteNavegacaoMzn: number | string;   // Agente de Navegação (9800 MT)
+  inatroMzn: number | string;            // INATRO (11510 MT)
+  registroAutomovelMzn: number | string; // Registro Automóvel (2500 MT)
+  chapaMatriculaMzn: number | string;    // Chapa de Matrícula (5000 MT)
+  mctlParqueamentoMzn: number | string;  // MCTL / Parqueamento Portuário (20200 MT)
+  despachanteMzn: number | string;       // Honorários Despachante (16000 MT)
+  transporteInlandMzn: number | string;  // Transporte Inland / Prancha (50000 MT)
+
+  // Taxa de Serviço PrimeWay
+  comissaoPerc: number | string;
+  baseComissao: 'cif_impostos' | 'apenas_cif';
+
+  // Retrocompatibilidade
+  taxasCirculacaoMzn?: number | string;
+  taxaPortuariaMzn?: number | string;
+
+  imageUrl?: string;
+}
+
+export const createCleanVeiculoItem = (): VeiculoItem => ({
+  id: Date.now().toString() + Math.random().toString(36).substring(2, 6),
+  tipo: 'camiao_basculante',
+  descricao: '',
+  chassisEngine: '',
+  valorFob: '',
+  valorFreteSeguro: '',
+  valorCif: '',
+  quantidade: 1,
+  portoOrigem: 'Tianjin Port, China',
+  portoDestino: 'Porto de Maputo / Beira',
+  comprimentoMm: '',
+  larguraMm: '',
+  alturaMm: '',
+  pesoTons: '',
+  direitosPerc: 5,
+  icePerc: 0,
+  ivaPerc: 16,
+
+  // Despesas Aduaneiras Regulamentares
+  tsaAduaneiroMzn: 1000,
+  taxaRadioMzn: 0,
+  mcnetMzn: 1550,
+  kudumbaMzn: 2250,
+
+  // Despesas Locais & Portuárias
+  agenteNavegacaoMzn: 9800,
+  inatroMzn: 11510,
+  registroAutomovelMzn: 2500,
+  chapaMatriculaMzn: 5000,
+  mctlParqueamentoMzn: 20200,
+  despachanteMzn: 16000,
+  transporteInlandMzn: 50000,
+
+  comissaoPerc: 3,
+  baseComissao: 'cif_impostos',
+  imageUrl: ''
+});
+
 interface Product {
   id: number;
   descricao: string;
@@ -447,53 +533,60 @@ function AppContent() {
   
   // Mode & Vehicle States
   const [calcMode, setCalcMode] = useState<'geral' | 'veiculos'>('geral');
-  const [veiculoForm, setVeiculoForm] = useState({
-    tipo: 'bomba_betao', // 'bomba_betao' | 'camiao_basculante' | 'camiao_carga' | 'maquina_pesada' | 'veiculo_ligeiro' | 'autocarro'
-    descricao: 'Sinotruk HOWO NX 6X4 Concrete Pump Truck 36M',
-    chassisEngine: 'Chassis ZZ1257N464GB1 | 371HP Engine | 36M Boom Pump | 2026',
-    valorFob: 131500 as number | string,
-    valorFreteSeguro: 14100 as number | string,
-    valorCif: 145600 as number | string,
-    portoOrigem: 'Tianjin Port, China',
-    portoDestino: 'Porto de Maputo / Beira',
-    comprimentoMm: 11300 as number | string,
-    larguraMm: 2550 as number | string,
-    alturaMm: 3900 as number | string,
-    pesoTons: 25 as number | string,
-    direitosPerc: 5 as number | string,
-    icePerc: 0 as number | string,
-    ivaPerc: 16 as number | string,
-    taxaPortuariaMzn: 120000 as number | string,
-    comissaoPerc: 3 as number | string,
-    transporteInlandMzn: 50000 as number | string,
-    imageUrl: 'https://files.manuscdn.com/user_upload_by_module/session_file/310419663028416962/glYQVTOtGErYGBoj.jpg'
-  });
+  const [veiculosList, setVeiculosList] = useState<VeiculoItem[]>(() => [createCleanVeiculoItem()]);
+  const [activeVeiculoId, setActiveVeiculoId] = useState<string>('');
 
-  const carregarCotacaoSinotrukHowo = () => {
-    setCalcMode('veiculos');
-    setMoeda('USD');
-    setTaxaCambio(64);
-    setVeiculoForm({
-      tipo: 'bomba_betao',
-      descricao: 'Sinotruk HOWO NX 6X4 Concrete Pump Truck 36M',
-      chassisEngine: 'Chassis ZZ1257N464GB1 | 371HP Engine | 36M Boom Pump | 2026',
-      valorFob: 131500,
-      valorFreteSeguro: 14100,
-      valorCif: 145600,
-      portoOrigem: 'Tianjin Port, China',
-      portoDestino: 'Porto de Maputo / Beira',
-      comprimentoMm: 11300,
-      larguraMm: 2550,
-      alturaMm: 3900,
-      pesoTons: 25,
-      direitosPerc: 5,
-      icePerc: 0,
-      ivaPerc: 16,
-      taxaPortuariaMzn: 120000,
-      comissaoPerc: 3,
-      transporteInlandMzn: 50000,
-      imageUrl: 'https://files.manuscdn.com/user_upload_by_module/session_file/310419663028416962/glYQVTOtGErYGBoj.jpg'
+  const currentVeiculo = useMemo(() => {
+    return veiculosList.find(v => v.id === activeVeiculoId) || veiculosList[0] || createCleanVeiculoItem();
+  }, [veiculosList, activeVeiculoId]);
+
+  const adicionarVeiculo = () => {
+    const novo = createCleanVeiculoItem();
+    setVeiculosList(prev => [...prev, novo]);
+    setActiveVeiculoId(novo.id);
+  };
+
+  const duplicarVeiculo = (id: string) => {
+    const original = veiculosList.find(v => v.id === id);
+    if (original) {
+      const clone: VeiculoItem = {
+        ...original,
+        id: Date.now().toString() + Math.random().toString(36).substring(2, 6),
+        descricao: original.descricao ? `${original.descricao} (Cópia)` : ''
+      };
+      setVeiculosList(prev => [...prev, clone]);
+      setActiveVeiculoId(clone.id);
+    }
+  };
+
+  const removerVeiculo = (id: string) => {
+    if (veiculosList.length <= 1) {
+      const novo = createCleanVeiculoItem();
+      setVeiculosList([novo]);
+      setActiveVeiculoId(novo.id);
+      return;
+    }
+    const filtered = veiculosList.filter(v => v.id !== id);
+    setVeiculosList(filtered);
+    if (activeVeiculoId === id) {
+      setActiveVeiculoId(filtered[0]?.id || '');
+    }
+  };
+
+  const atualizarVeiculoField = (id: string, field: keyof VeiculoItem, value: any) => {
+    setVeiculosList(prev => prev.map(v => v.id === id ? { ...v, [field]: value } : v));
+  };
+
+  const handleDeviceImageUpload = (id: string, file: File) => {
+    compressAndSetImage(file, (base64) => {
+      atualizarVeiculoField(id, 'imageUrl', base64);
     });
+  };
+
+  const limparCalculadoraVeiculos = () => {
+    const novo = createCleanVeiculoItem();
+    setVeiculosList([novo]);
+    setActiveVeiculoId(novo.id);
   };
 
   const [showDebitNoteModal, setShowDebitNoteModal] = useState(false);
@@ -821,63 +914,198 @@ function AppContent() {
     }
   };
 
-  const veiculoResults = useMemo(() => {
-    const fobUsd = Number(veiculoForm.valorFob) || 0;
-    const freteSeguroUsd = Number(veiculoForm.valorFreteSeguro) || 0;
-    const cifUsd = Number(veiculoForm.valorCif) || (fobUsd + freteSeguroUsd);
-    
+  const veiculoCalculatedList = useMemo(() => {
     const cambio = Number(taxaCambio) || 64;
-    const cifMzn = cifUsd * cambio;
 
-    const direitosPerc = Number(veiculoForm.direitosPerc) || 0;
-    const direitosMzn = cifMzn * (direitosPerc / 100);
+    return veiculosList.map((v) => {
+      const qty = Number(v.quantidade) > 0 ? Number(v.quantidade) : 1;
+      const fobUsdSingle = Number(v.valorFob) || 0;
+      const freteSeguroUsdSingle = Number(v.valorFreteSeguro) || 0;
+      const cifUsdSingle = Number(v.valorCif) || (fobUsdSingle + freteSeguroUsdSingle);
+      
+      const cifUsd = cifUsdSingle * qty;
+      const cifMzn = cifUsd * cambio;
 
-    const icePerc = Number(veiculoForm.icePerc) || 0;
-    const iceMzn = (cifMzn + direitosMzn) * (icePerc / 100);
+      // Impostos Aduaneiros Principais
+      const direitosPerc = Number(v.direitosPerc) || 0;
+      const direitosMzn = cifMzn * (direitosPerc / 100);
 
-    const ivaPerc = Number(veiculoForm.ivaPerc) || 16;
-    const ivaMzn = (cifMzn + direitosMzn + iceMzn) * (ivaPerc / 100);
+      const icePerc = Number(v.icePerc) || 0;
+      const iceMzn = (cifMzn + direitosMzn) * (icePerc / 100);
 
-    const totalImpostosMzn = direitosMzn + iceMzn + ivaMzn;
-    const taxaPortuariaMzn = Number(veiculoForm.taxaPortuariaMzn) || 0;
+      const ivaPerc = Number(v.ivaPerc) || 16;
+      const ivaMzn = (cifMzn + direitosMzn + iceMzn) * (ivaPerc / 100);
 
-    const comissaoPerc = Number(veiculoForm.comissaoPerc) || 0;
-    const comissaoMzn = cifMzn * (comissaoPerc / 100);
+      // Outras Taxas Aduaneiras Oficiais (TSA, MCNET, Kudumba, Rádio)
+      const tsaAduaneiroMzn = (v.tsaAduaneiroMzn !== undefined && v.tsaAduaneiroMzn !== '' ? Number(v.tsaAduaneiroMzn) : 1000) * qty;
+      const taxaRadioMzn = (v.taxaRadioMzn !== undefined && v.taxaRadioMzn !== '' ? Number(v.taxaRadioMzn) : 0) * qty;
+      const mcnetMzn = (v.mcnetMzn !== undefined && v.mcnetMzn !== '' ? Number(v.mcnetMzn) : 1550) * qty;
+      const kudumbaMzn = (v.kudumbaMzn !== undefined && v.kudumbaMzn !== '' ? Number(v.kudumbaMzn) : 2250) * qty;
 
-    const transporteInlandMzn = Number(veiculoForm.transporteInlandMzn) || 0;
+      const subtotalTaxasAduaneirasExtraMzn = tsaAduaneiroMzn + taxaRadioMzn + mcnetMzn + kudumbaMzn;
+      const totalImpostosMzn = direitosMzn + iceMzn + ivaMzn + subtotalTaxasAduaneirasExtraMzn;
 
-    const totalMzn = cifMzn + totalImpostosMzn + taxaPortuariaMzn + comissaoMzn + transporteInlandMzn;
-    const totalUsd = totalMzn / cambio;
+      // Despesas Locais & Portuárias
+      const agenteNavegacaoMzn = (v.agenteNavegacaoMzn !== undefined && v.agenteNavegacaoMzn !== '' ? Number(v.agenteNavegacaoMzn) : 9800) * qty;
+      const inatroMzn = (v.inatroMzn !== undefined && v.inatroMzn !== '' ? Number(v.inatroMzn) : 11510) * qty;
+      const registroAutomovelMzn = (v.registroAutomovelMzn !== undefined && v.registroAutomovelMzn !== '' ? Number(v.registroAutomovelMzn) : 2500) * qty;
+      const chapaMatriculaMzn = (v.chapaMatriculaMzn !== undefined && v.chapaMatriculaMzn !== '' ? Number(v.chapaMatriculaMzn) : 5000) * qty;
+      const mctlParqueamentoMzn = (v.mctlParqueamentoMzn !== undefined && v.mctlParqueamentoMzn !== '' ? Number(v.mctlParqueamentoMzn) : 20200) * qty;
+      const despachanteMzn = (Number(v.despachanteMzn) || 0) * qty;
+      const transporteInlandMzn = (Number(v.transporteInlandMzn) || 0) * qty;
 
-    const compM = (Number(veiculoForm.comprimentoMm) || 0) / 1000;
-    const largM = (Number(veiculoForm.larguraMm) || 0) / 1000;
-    const altM = (Number(veiculoForm.alturaMm) || 0) / 1000;
-    const cbmVeiculo = compM * largM * altM;
-    const pesoKg = (Number(veiculoForm.pesoTons) || 0) * 1000;
+      const totalDespesasLocaisPortuariasMzn = agenteNavegacaoMzn + inatroMzn + registroAutomovelMzn + chapaMatriculaMzn + mctlParqueamentoMzn + despachanteMzn + transporteInlandMzn;
+
+      const baseComissaoMzn = v.baseComissao === 'apenas_cif' 
+        ? cifMzn 
+        : (cifMzn + totalImpostosMzn);
+
+      const comissaoPerc = Number(v.comissaoPerc) || 0;
+      const comissaoMzn = baseComissaoMzn * (comissaoPerc / 100);
+
+      const totalMzn = cifMzn + totalImpostosMzn + totalDespesasLocaisPortuariasMzn + comissaoMzn;
+      const totalUsd = totalMzn / cambio;
+
+      const compM = (Number(v.comprimentoMm) || 0) / 1000;
+      const largM = (Number(v.larguraMm) || 0) / 1000;
+      const altM = (Number(v.alturaMm) || 0) / 1000;
+      const cbmVeiculoSingle = compM * largM * altM;
+      const cbmVeiculoTotal = cbmVeiculoSingle * qty;
+      const pesoKg = (Number(v.pesoTons) || 0) * 1000 * qty;
+
+      return {
+        item: v,
+        qty,
+        fobUsdSingle,
+        freteSeguroUsdSingle,
+        cifUsdSingle,
+        cifUsd,
+        cifMzn,
+        direitosPerc,
+        direitosMzn,
+        icePerc,
+        iceMzn,
+        ivaPerc,
+        ivaMzn,
+        tsaAduaneiroMzn,
+        taxaRadioMzn,
+        mcnetMzn,
+        kudumbaMzn,
+        subtotalTaxasAduaneirasExtraMzn,
+        totalImpostosMzn,
+        agenteNavegacaoMzn,
+        inatroMzn,
+        registroAutomovelMzn,
+        chapaMatriculaMzn,
+        mctlParqueamentoMzn,
+        despachanteMzn,
+        transporteInlandMzn,
+        totalDespesasLocaisPortuariasMzn,
+        taxasCirculacaoMzn: inatroMzn + registroAutomovelMzn + chapaMatriculaMzn,
+        taxaPortuariaMzn: agenteNavegacaoMzn + mctlParqueamentoMzn,
+        baseComissaoMzn,
+        comissaoPerc,
+        comissaoMzn,
+        totalMzn,
+        totalUsd,
+        cbmVeiculoSingle,
+        cbmVeiculoTotal,
+        pesoKg
+      };
+    });
+  }, [veiculosList, taxaCambio]);
+
+  const veiculoResults = useMemo(() => {
+    const cambio = Number(taxaCambio) || 64;
+
+    let totalFobUsd = 0;
+    let totalFreteSeguroUsd = 0;
+    let totalCifUsd = 0;
+    let totalCifMzn = 0;
+    let totalDireitosMzn = 0;
+    let totalIceMzn = 0;
+    let totalIvaMzn = 0;
+    let totalTsaMzn = 0;
+    let totalRadioMzn = 0;
+    let totalMcnetMzn = 0;
+    let totalKudumbaMzn = 0;
+    let totalImpostosMzn = 0;
+    let totalAgenteNavegacaoMzn = 0;
+    let totalInatroMzn = 0;
+    let totalRegistroAutomovelMzn = 0;
+    let totalChapaMatriculaMzn = 0;
+    let totalMctlParqueamentoMzn = 0;
+    let totalDespachanteMzn = 0;
+    let totalTransporteInlandMzn = 0;
+    let totalDespesasLocaisPortuariasMzn = 0;
+    let totalComissaoMzn = 0;
+    let totalMzn = 0;
+    let totalUsd = 0;
+    let cbmVeiculo = 0;
+    let pesoKg = 0;
+
+    veiculoCalculatedList.forEach(calc => {
+      totalFobUsd += calc.fobUsdSingle * calc.qty;
+      totalFreteSeguroUsd += calc.freteSeguroUsdSingle * calc.qty;
+      totalCifUsd += calc.cifUsd;
+      totalCifMzn += calc.cifMzn;
+      totalDireitosMzn += calc.direitosMzn;
+      totalIceMzn += calc.iceMzn;
+      totalIvaMzn += calc.ivaMzn;
+      totalTsaMzn += calc.tsaAduaneiroMzn;
+      totalRadioMzn += calc.taxaRadioMzn;
+      totalMcnetMzn += calc.mcnetMzn;
+      totalKudumbaMzn += calc.kudumbaMzn;
+      totalImpostosMzn += calc.totalImpostosMzn;
+      totalAgenteNavegacaoMzn += calc.agenteNavegacaoMzn;
+      totalInatroMzn += calc.inatroMzn;
+      totalRegistroAutomovelMzn += calc.registroAutomovelMzn;
+      totalChapaMatriculaMzn += calc.chapaMatriculaMzn;
+      totalMctlParqueamentoMzn += calc.mctlParqueamentoMzn;
+      totalDespachanteMzn += calc.despachanteMzn;
+      totalTransporteInlandMzn += calc.transporteInlandMzn;
+      totalDespesasLocaisPortuariasMzn += calc.totalDespesasLocaisPortuariasMzn;
+      totalComissaoMzn += calc.comissaoMzn;
+      totalMzn += calc.totalMzn;
+      totalUsd += calc.totalUsd;
+      cbmVeiculo += calc.cbmVeiculoTotal;
+      pesoKg += calc.pesoKg;
+    });
 
     return {
-      fobUsd,
-      freteSeguroUsd,
-      cifUsd,
-      cifMzn,
-      direitosPerc,
-      direitosMzn,
-      icePerc,
-      iceMzn,
-      ivaPerc,
-      ivaMzn,
+      fobUsd: totalFobUsd,
+      freteSeguroUsd: totalFreteSeguroUsd,
+      cifUsd: totalCifUsd,
+      cifMzn: totalCifMzn,
+      direitosMzn: totalDireitosMzn,
+      iceMzn: totalIceMzn,
+      ivaMzn: totalIvaMzn,
+      tsaAduaneiroMzn: totalTsaMzn,
+      taxaRadioMzn: totalRadioMzn,
+      mcnetMzn: totalMcnetMzn,
+      kudumbaMzn: totalKudumbaMzn,
       totalImpostosMzn,
-      taxaPortuariaMzn,
-      comissaoPerc,
-      comissaoMzn,
-      transporteInlandMzn,
+      agenteNavegacaoMzn: totalAgenteNavegacaoMzn,
+      inatroMzn: totalInatroMzn,
+      registroAutomovelMzn: totalRegistroAutomovelMzn,
+      chapaMatriculaMzn: totalChapaMatriculaMzn,
+      mctlParqueamentoMzn: totalMctlParqueamentoMzn,
+      despachanteMzn: totalDespachanteMzn,
+      taxasCirculacaoMzn: totalInatroMzn + totalRegistroAutomovelMzn + totalChapaMatriculaMzn,
+      taxaPortuariaMzn: totalAgenteNavegacaoMzn + totalMctlParqueamentoMzn,
+      transporteInlandMzn: totalTransporteInlandMzn,
+      totalDespesasLocaisPortuariasMzn,
+      baseComissaoMzn: totalCifMzn + totalImpostosMzn,
+      comissaoPerc: veiculosList[0]?.comissaoPerc || 3,
+      comissaoMzn: totalComissaoMzn,
       totalMzn,
       totalUsd,
       cbmVeiculo,
       pesoKg,
-      cambio
+      cambio,
+      itemsCalculated: veiculoCalculatedList
     };
-  }, [veiculoForm, taxaCambio]);
+  }, [veiculoCalculatedList, taxaCambio, veiculosList]);
 
   const results = useMemo((): CalculationResult => {
     if (calcMode === 'veiculos') {
@@ -885,8 +1113,8 @@ function AppContent() {
       const subtotalProdutos = isMzn ? veiculoResults.cifMzn : veiculoResults.cifUsd;
       const total = isMzn ? veiculoResults.totalMzn : veiculoResults.totalUsd;
       const custosEnvio = isMzn 
-        ? (veiculoResults.totalImpostosMzn + veiculoResults.taxaPortuariaMzn + veiculoResults.transporteInlandMzn)
-        : ((veiculoResults.totalImpostosMzn + veiculoResults.taxaPortuariaMzn + veiculoResults.transporteInlandMzn) / veiculoResults.cambio);
+        ? (veiculoResults.totalImpostosMzn + veiculoResults.despachanteMzn + veiculoResults.taxasCirculacaoMzn + veiculoResults.taxaPortuariaMzn + veiculoResults.transporteInlandMzn)
+        : ((veiculoResults.totalImpostosMzn + veiculoResults.despachanteMzn + veiculoResults.taxasCirculacaoMzn + veiculoResults.taxaPortuariaMzn + veiculoResults.transporteInlandMzn) / veiculoResults.cambio);
       const valorComissao = isMzn ? veiculoResults.comissaoMzn : (veiculoResults.comissaoMzn / veiculoResults.cambio);
 
       let valorDesconto = 0;
@@ -1275,25 +1503,24 @@ function AppContent() {
         clientInfo: nomeCliente || 'Cliente Veículo',
         operatorInfo: user?.displayName || 'PrimeWay Operator',
         idCode: `PW-VEH-${quoteRefCode}`,
-        origin: veiculoForm.portoOrigem || 'China',
+        origin: veiculosList[0]?.portoOrigem || 'China',
         shipMode: 'SEA',
         priceType: 'FREIGHT_AND_DUTY',
         paymentType: 'NORMAL',
       });
 
-      setDebitItems([
-        {
-          id: Date.now().toString(),
-          orderNumber: 'VEH-001',
-          cargoDescription: `${veiculoForm.descricao} (${veiculoForm.chassisEngine})`,
-          pkgs: 1,
-          actualAmount: veiculoResults.cbmVeiculo.toFixed(2),
-          chargeableAmount: veiculoResults.cbmVeiculo.toFixed(2),
-          unitPrice: veiculoResults.totalMzn.toFixed(2),
-          unitType: 'UN'
-        }
-      ]);
+      const items: DebitItem[] = veiculoCalculatedList.map((calc, idx) => ({
+        id: calc.item.id,
+        orderNumber: `VEH-00${idx + 1}`,
+        cargoDescription: `${calc.item.descricao || 'Veículo / Equipamento'} (${calc.item.chassisEngine || 'Specs'})`,
+        pkgs: calc.qty,
+        actualAmount: calc.cbmVeiculoTotal.toFixed(2),
+        chargeableAmount: calc.cbmVeiculoTotal.toFixed(2),
+        unitPrice: (calc.totalMzn / (calc.qty || 1)).toFixed(2),
+        unitType: 'UN'
+      }));
 
+      setDebitItems(items);
       setShowDebitNoteModal(true);
       return;
     }
@@ -1992,16 +2219,26 @@ function AppContent() {
                 <h4 className="font-bold text-sm uppercase tracking-wide flex items-center gap-2">
                   Calculadora Especial para Veículos & Máquinas (CIF)
                 </h4>
-                <p className="text-xs text-slate-300">Cálculo dedicado de CIF China + Impostos Alfandegários de Moçambique (Direitos, ICE, IVA, RoRo & Inland).</p>
+                <p className="text-xs text-slate-300">Cálculo individual e multi-veículos: CIF + Impostos (Direitos, ICE, IVA, RoRo, Despachante & Inland).</p>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={carregarCotacaoSinotrukHowo}
-              className="bg-corp-orange hover:bg-corp-orange/90 text-white font-bold text-xs px-4 py-2.5 rounded-xl uppercase tracking-wider shrink-0 transition-all shadow-md flex items-center gap-2"
-            >
-              <Zap size={14} /> Exemplo: Sinotruk HOWO 36M ($145k)
-            </button>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={adicionarVeiculo}
+                className="bg-corp-orange hover:bg-corp-orange/90 text-white font-bold text-xs px-4 py-2.5 rounded-xl uppercase tracking-wider transition-all shadow-md flex items-center gap-2"
+              >
+                <Plus size={14} /> Adicionar Veículo
+              </button>
+              <button
+                type="button"
+                onClick={limparCalculadoraVeiculos}
+                className="bg-white/10 hover:bg-white/20 text-white font-bold text-xs px-3 py-2.5 rounded-xl uppercase tracking-wider transition-all flex items-center gap-1.5"
+                title="Limpar calculadora e começar do zero"
+              >
+                <RotateCcw size={14} /> Limpar
+              </button>
+            </div>
           </div>
         )}
 
@@ -2086,12 +2323,83 @@ function AppContent() {
             {calcMode === 'veiculos' ? (
               /* Vehicle Configuration Sections */
               <div className="space-y-8">
-                {/* 2. Vehicle Specifications */}
+                {/* Vehicle Selector Tabs Header */}
+                <section className="bento-item !p-5 md:!p-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+                    <h3 className="font-heading font-semibold text-xs text-corp-blue uppercase tracking-[0.3em] flex items-center gap-2">
+                      <Truck size={16} /> Lista de Veículos ({veiculosList.length})
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={adicionarVeiculo}
+                      className="text-xs font-bold text-corp-orange hover:text-corp-orange/80 flex items-center gap-1.5 self-start sm:self-auto uppercase tracking-wider bg-corp-orange/10 px-3 py-1.5 rounded-lg border border-corp-orange/20"
+                    >
+                      <Plus size={14} /> Adicionar Mais Um Veículo
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                    {veiculosList.map((v, idx) => {
+                      const isActive = v.id === currentVeiculo.id;
+                      const calc = veiculoCalculatedList.find(c => c.item.id === v.id);
+                      return (
+                        <div
+                          key={v.id}
+                          onClick={() => setActiveVeiculoId(v.id)}
+                          className={`p-3.5 rounded-xl border transition-all cursor-pointer relative group ${
+                            isActive 
+                              ? 'bg-corp-blue text-white border-corp-blue shadow-md' 
+                              : 'bg-slate-50 hover:bg-slate-100/80 border-slate-200 text-slate-800'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between gap-2 mb-1">
+                            <span className={`text-[9px] font-extrabold uppercase px-2 py-0.5 rounded-md ${
+                              isActive ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
+                            }`}>
+                              Veículo #{idx + 1} ({v.quantidade || 1}x)
+                            </span>
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={(e) => { e.stopPropagation(); duplicarVeiculo(v.id); }}
+                                className={`p-1 rounded hover:bg-white/20 text-[10px] ${isActive ? 'text-white' : 'text-slate-400 hover:text-slate-700'}`}
+                                title="Duplicar este veículo"
+                              >
+                                Duplicar
+                              </button>
+                              {veiculosList.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={(e) => { e.stopPropagation(); removerVeiculo(v.id); }}
+                                  className={`p-1 rounded hover:bg-red-500/20 text-[10px] ${isActive ? 'text-red-200 hover:text-white' : 'text-slate-400 hover:text-red-600'}`}
+                                  title="Remover este veículo"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                          <p className="text-xs font-bold truncate">
+                            {v.descricao || 'Novo Veículo sem descrição'}
+                          </p>
+                          <div className="flex items-center justify-between mt-2 pt-2 border-t border-current/10 text-[10px]">
+                            <span className="opacity-80">CIF Total:</span>
+                            <span className="font-bold">
+                              {moeda === 'MZN' ? `MZN ${formatoMoeda(calc?.cifMzn || 0)}` : `$ ${formatoMoeda(calc?.cifUsd || 0)} USD`}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </section>
+
+                {/* 2. Current Active Vehicle Specifications */}
                 <section className="bento-item !p-6 md:!p-8">
                   <div className="flex items-center justify-between mb-6">
                     <h3 className="font-heading font-semibold text-xs text-corp-blue uppercase tracking-[0.3em] flex items-center gap-3">
                       <span className="w-6 h-6 rounded-md bg-corp-blue/5 flex items-center justify-center text-[10px]">02</span>
-                      Especificações do Veículo / Camião
+                      Editar Veículo #{veiculosList.findIndex(v => v.id === currentVeiculo.id) + 1}
                     </h3>
                     <span className="text-[10px] font-bold uppercase tracking-wider bg-corp-orange/10 text-corp-orange px-3 py-1 rounded-full border border-corp-orange/20">
                       Cálculo CIF
@@ -2099,12 +2407,12 @@ function AppContent() {
                   </div>
 
                   <div className="space-y-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      <div>
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                      <div className="md:col-span-4">
                         <label className="label-corp">Tipo / Categoria de Veículo</label>
                         <select
-                          value={veiculoForm.tipo}
-                          onChange={(e) => setVeiculoForm(prev => ({ ...prev, tipo: e.target.value }))}
+                          value={currentVeiculo.tipo}
+                          onChange={(e) => atualizarVeiculoField(currentVeiculo.id, 'tipo', e.target.value)}
                           className="input-modern font-semibold !py-2.5 !px-3 text-xs w-full"
                         >
                           <option value="bomba_betao">Bomba de Betão / Camião Betoneira (Pump Truck)</option>
@@ -2115,14 +2423,24 @@ function AppContent() {
                         </select>
                       </div>
 
-                      <div>
+                      <div className="md:col-span-6">
                         <label className="label-corp">Descrição / Modelo do Veículo</label>
                         <input
                           type="text"
-                          value={veiculoForm.descricao}
-                          onChange={(e) => setVeiculoForm(prev => ({ ...prev, descricao: e.target.value }))}
+                          value={currentVeiculo.descricao}
+                          onChange={(e) => atualizarVeiculoField(currentVeiculo.id, 'descricao', e.target.value)}
                           className="input-modern font-semibold !py-2.5 !px-3 text-xs w-full"
-                          placeholder="Ex: Sinotruk HOWO NX 6X4 Concrete Pump Truck 36M"
+                          placeholder="Ex: Camião Basculante Sinotruk 6X4 / Escavadora Caterpillar"
+                        />
+                      </div>
+
+                      <div className="md:col-span-2">
+                        <label className="label-corp">Quantidade</label>
+                        <input
+                          type="number" min="1" step="1"
+                          value={currentVeiculo.quantidade || 1}
+                          onChange={(e) => atualizarVeiculoField(currentVeiculo.id, 'quantidade', Math.max(1, Number(e.target.value) || 1))}
+                          className="input-modern font-bold !py-2.5 !px-3 text-xs w-full text-center"
                         />
                       </div>
                     </div>
@@ -2131,10 +2449,10 @@ function AppContent() {
                       <label className="label-corp">Chassis, Motor e Ano de Fabricação</label>
                       <input
                         type="text"
-                        value={veiculoForm.chassisEngine}
-                        onChange={(e) => setVeiculoForm(prev => ({ ...prev, chassisEngine: e.target.value }))}
+                        value={currentVeiculo.chassisEngine}
+                        onChange={(e) => atualizarVeiculoField(currentVeiculo.id, 'chassisEngine', e.target.value)}
                         className="input-modern !py-2.5 !px-3 text-xs w-full"
-                        placeholder="Ex: Chassis ZZ1257N464GB1 | 371HP Engine | 2026"
+                        placeholder="Ex: Chassis ZZ1257N464GB1 | Motor 371HP | 2026"
                       />
                     </div>
 
@@ -2149,52 +2467,45 @@ function AppContent() {
 
                       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
-                          <label className="label-corp">Preço FOB China (USD)</label>
+                          <label className="label-corp">Preço FOB Unitário (USD)</label>
                           <input
                             type="number" step="any"
-                            value={veiculoForm.valorFob || ''}
+                            value={currentVeiculo.valorFob || ''}
                             onChange={(e) => {
                               const fob = e.target.value;
-                              setVeiculoForm(prev => {
-                                const frete = Number(prev.valorFreteSeguro) || 0;
-                                return {
-                                  ...prev,
-                                  valorFob: fob,
-                                  valorCif: Number(fob) + frete
-                                };
-                              });
+                              const frete = Number(currentVeiculo.valorFreteSeguro) || 0;
+                              atualizarVeiculoField(currentVeiculo.id, 'valorFob', fob);
+                              atualizarVeiculoField(currentVeiculo.id, 'valorCif', Number(fob) + frete);
                             }}
                             className="input-modern font-semibold !py-2.5 !px-3 text-xs"
+                            placeholder="0.00"
                           />
                         </div>
 
                         <div>
-                          <label className="label-corp">Frete + Seguro (USD)</label>
+                          <label className="label-corp">Frete + Seguro Unitário (USD)</label>
                           <input
                             type="number" step="any"
-                            value={veiculoForm.valorFreteSeguro || ''}
+                            value={currentVeiculo.valorFreteSeguro || ''}
                             onChange={(e) => {
                               const frete = e.target.value;
-                              setVeiculoForm(prev => {
-                                const fob = Number(prev.valorFob) || 0;
-                                return {
-                                  ...prev,
-                                  valorFreteSeguro: frete,
-                                  valorCif: fob + Number(frete)
-                                };
-                              });
+                              const fob = Number(currentVeiculo.valorFob) || 0;
+                              atualizarVeiculoField(currentVeiculo.id, 'valorFreteSeguro', frete);
+                              atualizarVeiculoField(currentVeiculo.id, 'valorCif', fob + Number(frete));
                             }}
                             className="input-modern font-semibold !py-2.5 !px-3 text-xs"
+                            placeholder="0.00"
                           />
                         </div>
 
                         <div>
-                          <label className="label-corp text-corp-blue font-bold">PREÇO CIF TOTAL (USD)</label>
+                          <label className="label-corp text-corp-blue font-bold">PREÇO CIF UNITÁRIO (USD)</label>
                           <input
                             type="number" step="any"
-                            value={veiculoForm.valorCif || ''}
-                            onChange={(e) => setVeiculoForm(prev => ({ ...prev, valorCif: e.target.value }))}
+                            value={currentVeiculo.valorCif || ''}
+                            onChange={(e) => atualizarVeiculoField(currentVeiculo.id, 'valorCif', e.target.value)}
                             className="input-modern font-bold !bg-blue-50/80 text-corp-blue border-blue-200 !py-2.5 !px-3 text-xs"
+                            placeholder="0.00"
                           />
                         </div>
                       </div>
@@ -2204,8 +2515,8 @@ function AppContent() {
                           <label className="label-corp">Porto de Origem / Embarque</label>
                           <input
                             type="text"
-                            value={veiculoForm.portoOrigem}
-                            onChange={(e) => setVeiculoForm(prev => ({ ...prev, portoOrigem: e.target.value }))}
+                            value={currentVeiculo.portoOrigem}
+                            onChange={(e) => atualizarVeiculoField(currentVeiculo.id, 'portoOrigem', e.target.value)}
                             className="input-modern !py-2.5 !px-3 text-xs w-full"
                             placeholder="Ex: Tianjin Port, China"
                           />
@@ -2215,8 +2526,8 @@ function AppContent() {
                           <label className="label-corp">Porto de Destino em Moçambique</label>
                           <input
                             type="text"
-                            value={veiculoForm.portoDestino}
-                            onChange={(e) => setVeiculoForm(prev => ({ ...prev, portoDestino: e.target.value }))}
+                            value={currentVeiculo.portoDestino}
+                            onChange={(e) => atualizarVeiculoField(currentVeiculo.id, 'portoDestino', e.target.value)}
                             className="input-modern !py-2.5 !px-3 text-xs w-full"
                             placeholder="Ex: Porto de Maputo / Beira"
                           />
@@ -2228,10 +2539,10 @@ function AppContent() {
                     <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl space-y-4">
                       <div className="flex items-center justify-between border-b border-slate-200/60 pb-3">
                         <span className="text-xs font-bold text-corp-blue uppercase tracking-wider flex items-center gap-2">
-                          <Package size={16} /> Dimensões e Peso Bruto
+                          <Package size={16} /> Dimensões e Peso Bruto (Unitário)
                         </span>
                         <span className="text-[10px] text-slate-500 font-semibold">
-                          Vol: {veiculoResults.cbmVeiculo.toFixed(2)} m³ | Peso: {veiculoForm.pesoTons} Toneladas
+                          Vol. Unitário: {(((Number(currentVeiculo.comprimentoMm)||0)/1000) * ((Number(currentVeiculo.larguraMm)||0)/1000) * ((Number(currentVeiculo.alturaMm)||0)/1000)).toFixed(2)} m³
                         </span>
                       </div>
 
@@ -2240,10 +2551,10 @@ function AppContent() {
                           <label className="label-corp">Comprimento (mm)</label>
                           <input
                             type="number" step="any"
-                            value={veiculoForm.comprimentoMm || ''}
-                            onChange={(e) => setVeiculoForm(prev => ({ ...prev, comprimentoMm: e.target.value }))}
+                            value={currentVeiculo.comprimentoMm || ''}
+                            onChange={(e) => atualizarVeiculoField(currentVeiculo.id, 'comprimentoMm', e.target.value)}
                             className="input-modern !py-2.5 !px-3 text-xs"
-                            placeholder="11300"
+                            placeholder="0"
                           />
                         </div>
 
@@ -2251,10 +2562,10 @@ function AppContent() {
                           <label className="label-corp">Largura (mm)</label>
                           <input
                             type="number" step="any"
-                            value={veiculoForm.larguraMm || ''}
-                            onChange={(e) => setVeiculoForm(prev => ({ ...prev, larguraMm: e.target.value }))}
+                            value={currentVeiculo.larguraMm || ''}
+                            onChange={(e) => atualizarVeiculoField(currentVeiculo.id, 'larguraMm', e.target.value)}
                             className="input-modern !py-2.5 !px-3 text-xs"
-                            placeholder="2550"
+                            placeholder="0"
                           />
                         </div>
 
@@ -2262,10 +2573,10 @@ function AppContent() {
                           <label className="label-corp">Altura (mm)</label>
                           <input
                             type="number" step="any"
-                            value={veiculoForm.alturaMm || ''}
-                            onChange={(e) => setVeiculoForm(prev => ({ ...prev, alturaMm: e.target.value }))}
+                            value={currentVeiculo.alturaMm || ''}
+                            onChange={(e) => atualizarVeiculoField(currentVeiculo.id, 'alturaMm', e.target.value)}
                             className="input-modern !py-2.5 !px-3 text-xs"
-                            placeholder="3900"
+                            placeholder="0"
                           />
                         </div>
 
@@ -2273,67 +2584,81 @@ function AppContent() {
                           <label className="label-corp">Peso Bruto (Ton)</label>
                           <input
                             type="number" step="any"
-                            value={veiculoForm.pesoTons || ''}
-                            onChange={(e) => setVeiculoForm(prev => ({ ...prev, pesoTons: e.target.value }))}
+                            value={currentVeiculo.pesoTons || ''}
+                            onChange={(e) => atualizarVeiculoField(currentVeiculo.id, 'pesoTons', e.target.value)}
                             className="input-modern !py-2.5 !px-3 text-xs"
-                            placeholder="25"
+                            placeholder="0"
                           />
                         </div>
                       </div>
                     </div>
 
-                    {/* Vehicle Image Upload / Link */}
+                    {/* Vehicle Image Upload / Device Upload */}
                     <div className="p-4 bg-slate-50 border border-slate-100 rounded-2xl space-y-3">
-                      <label className="label-corp flex items-center justify-between">
-                        <span>Imagem do Veículo (para Fatura Proforma)</span>
-                        {veiculoForm.imageUrl && (
+                      <div className="flex items-center justify-between">
+                        <label className="label-corp font-bold flex items-center gap-2 !mb-0">
+                          <ImageIcon size={16} className="text-corp-blue" />
+                          Foto / Imagem do Veículo (Upload do Dispositivo)
+                        </label>
+                        {currentVeiculo.imageUrl && (
                           <button
                             type="button"
-                            onClick={() => setVeiculoForm(prev => ({ ...prev, imageUrl: '' }))}
+                            onClick={() => atualizarVeiculoField(currentVeiculo.id, 'imageUrl', '')}
                             className="text-[10px] font-bold text-red-500 hover:text-red-700 uppercase"
                           >
-                            Remover Imagem
+                            Remover Foto
                           </button>
                         )}
-                      </label>
+                      </div>
 
-                      {veiculoForm.imageUrl ? (
-                        <div className="flex items-center gap-4 bg-white p-3 rounded-xl border border-slate-200">
+                      {currentVeiculo.imageUrl ? (
+                        <div className="flex items-center gap-4 bg-white p-3 rounded-xl border border-slate-200 shadow-sm">
                           <img
-                            src={veiculoForm.imageUrl}
-                            alt={veiculoForm.descricao}
-                            className="w-20 h-16 object-cover rounded-lg border border-slate-200"
+                            src={currentVeiculo.imageUrl}
+                            alt={currentVeiculo.descricao || 'Veículo'}
+                            className="w-24 h-20 object-cover rounded-lg border border-slate-200 shrink-0"
+                            referrerPolicy="no-referrer"
                           />
-                          <div className="flex-1 min-w-0">
-                            <p className="text-xs font-bold text-slate-800 truncate">{veiculoForm.descricao}</p>
-                            <p className="text-[10px] text-slate-400 truncate">{veiculoForm.imageUrl}</p>
+                          <div className="flex-1 min-w-0 space-y-1">
+                            <p className="text-xs font-bold text-slate-800 truncate">{currentVeiculo.descricao || 'Foto do Veículo'}</p>
+                            <p className="text-[10px] text-emerald-600 font-semibold flex items-center gap-1">
+                              <CheckCircle2 size={12} /> Foto anexada para Fatura Proforma
+                            </p>
                           </div>
                         </div>
                       ) : (
-                        <div className="flex flex-col sm:flex-row gap-3 items-center">
-                          <input
-                            type="url"
-                            value={veiculoForm.imageUrl}
-                            onChange={(e) => setVeiculoForm(prev => ({ ...prev, imageUrl: e.target.value }))}
-                            className="input-modern !py-2 !px-3 text-xs flex-1"
-                            placeholder="https://exemplo.com/foto-camiao.jpg"
-                          />
-                          <label className="btn-modern-primary !bg-corp-blue !py-2 !px-4 text-xs cursor-pointer shrink-0">
-                            <span>Anexar Imagem</span>
-                            <input
-                              type="file"
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {/* File Upload Zone */}
+                          <div className="relative border-2 border-dashed border-slate-300 hover:border-corp-blue rounded-xl p-4 flex flex-col items-center justify-center bg-white hover:bg-blue-50/20 transition-all cursor-pointer text-center h-[120px] group">
+                            <input 
+                              type="file" 
                               accept="image/*"
-                              className="hidden"
                               onChange={(e) => {
                                 const file = e.target.files?.[0];
                                 if (file) {
-                                  compressAndSetImage(file, (base64) => {
-                                    setVeiculoForm(prev => ({ ...prev, imageUrl: base64 }));
-                                  });
+                                  handleDeviceImageUpload(currentVeiculo.id, file);
                                 }
                               }}
+                              className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
                             />
-                          </label>
+                            <div className="w-10 h-10 rounded-full bg-blue-50 group-hover:bg-corp-blue group-hover:text-white text-corp-blue flex items-center justify-center mb-2 transition-colors">
+                              <Upload size={18} />
+                            </div>
+                            <p className="text-xs font-bold text-slate-700 group-hover:text-corp-blue">Carregar Foto do Dispositivo</p>
+                            <p className="text-[9px] text-slate-400">Galeria, Ficheiros ou Câmera</p>
+                          </div>
+
+                          {/* URL Input */}
+                          <div className="flex flex-col justify-center p-4 bg-white rounded-xl border border-slate-200 space-y-2">
+                            <span className="text-[10px] text-slate-500 font-semibold uppercase">Ou colar link da imagem (URL)</span>
+                            <input
+                              type="url"
+                              value={currentVeiculo.imageUrl || ''}
+                              onChange={(e) => atualizarVeiculoField(currentVeiculo.id, 'imageUrl', e.target.value)}
+                              className="input-modern !py-2 !px-3 text-xs"
+                              placeholder="https://exemplo.com/foto-veiculo.jpg"
+                            />
+                          </div>
                         </div>
                       )}
                     </div>
@@ -2341,83 +2666,242 @@ function AppContent() {
                 </section>
 
                 {/* 3. Customs Duties & Port Logistics */}
-                <section className="bento-item !p-6 md:!p-8">
-                  <h3 className="font-heading font-semibold text-xs text-corp-blue mb-6 uppercase tracking-[0.3em] flex items-center gap-3">
-                    <span className="w-6 h-6 rounded-md bg-corp-blue/5 flex items-center justify-center text-[10px]">03</span>
-                    Impostos Alfandegários & Taxas de Despacho
-                  </h3>
+                <section className="bento-item !p-6 md:!p-8 space-y-6">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200/60 pb-4">
+                    <h3 className="font-heading font-semibold text-xs text-corp-blue uppercase tracking-[0.3em] flex items-center gap-3">
+                      <span className="w-6 h-6 rounded-md bg-corp-blue/5 flex items-center justify-center text-[10px]">03</span>
+                      Impostos Alfandegários, Taxas Aduaneiras & Despesas Locais
+                    </h3>
+                    <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full w-fit">
+                      Discriminado conforme Pauta Aduaneira & Porto Moçambique
+                    </span>
+                  </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div>
-                      <label className="label-corp">Direitos Aduaneiros (%)</label>
-                      <input
-                        type="number" step="any"
-                        value={veiculoForm.direitosPerc || ''}
-                        onChange={(e) => setVeiculoForm(prev => ({ ...prev, direitosPerc: e.target.value }))}
-                        className="input-modern !py-2.5 !px-3 text-xs"
-                        placeholder="5"
-                      />
-                      <span className="text-[9px] text-slate-400 mt-1 block">Ex: 5% para equipamentos/máquinas</span>
+                  {/* 1. Impostos Alfandegários Puros (Estado) */}
+                  <div className="space-y-3">
+                    <p className="text-xs font-bold text-slate-700 flex items-center gap-2">
+                      <FileText size={14} className="text-corp-blue" />
+                      1. Impostos Alfandegários Principais (Alfândegas de Moçambique)
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                      <div>
+                        <label className="label-corp">Direitos Aduaneiros (%)</label>
+                        <input
+                          type="number" step="any"
+                          value={currentVeiculo.direitosPerc !== undefined ? currentVeiculo.direitosPerc : ''}
+                          onChange={(e) => atualizarVeiculoField(currentVeiculo.id, 'direitosPerc', e.target.value)}
+                          className="input-modern !py-2.5 !px-3 text-xs"
+                          placeholder="5"
+                        />
+                        <span className="text-[9px] text-slate-400 mt-1 block">Ex: 5% a 20% (Calculado sobre valor CIF)</span>
+                      </div>
+
+                      <div>
+                        <label className="label-corp">ICE - Consumo Específico (%)</label>
+                        <input
+                          type="number" step="any"
+                          value={currentVeiculo.icePerc !== undefined ? currentVeiculo.icePerc : ''}
+                          onChange={(e) => atualizarVeiculoField(currentVeiculo.id, 'icePerc', e.target.value)}
+                          className="input-modern !py-2.5 !px-3 text-xs"
+                          placeholder="0"
+                        />
+                        <span className="text-[9px] text-slate-400 mt-1 block">0% a 75% conforme cilindrada/tipo</span>
+                      </div>
+
+                      <div>
+                        <label className="label-corp">IVA Alfândegas (%)</label>
+                        <input
+                          type="number" step="any"
+                          value={currentVeiculo.ivaPerc !== undefined ? currentVeiculo.ivaPerc : ''}
+                          onChange={(e) => atualizarVeiculoField(currentVeiculo.id, 'ivaPerc', e.target.value)}
+                          className="input-modern !py-2.5 !px-3 text-xs font-semibold"
+                          placeholder="16"
+                        />
+                        <span className="text-[9px] text-slate-400 mt-1 block">Taxa oficial de IVA Moçambique (16%)</span>
+                      </div>
                     </div>
+                  </div>
 
-                    <div>
-                      <label className="label-corp">ICE - Consumo Específico (%)</label>
-                      <input
-                        type="number" step="any"
-                        value={veiculoForm.icePerc || ''}
-                        onChange={(e) => setVeiculoForm(prev => ({ ...prev, icePerc: e.target.value }))}
-                        className="input-modern !py-2.5 !px-3 text-xs"
-                        placeholder="0"
-                      />
-                      <span className="text-[9px] text-slate-400 mt-1 block">0% a 75% conforme a cilindrada/tipo</span>
+                  {/* 2. Taxas Aduaneiras Regulamentares (TSA, MCNET, Kudumba, Rádio) */}
+                  <div className="space-y-3">
+                    <p className="text-xs font-bold text-slate-700 flex items-center gap-2">
+                      <ShieldCheck size={14} className="text-corp-blue" />
+                      2. Taxas Aduaneiras Regulamentares (Aduanas / MCNET / Kudumba)
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                      <div>
+                        <label className="label-corp">TSA - Serviços Aduaneiros (MZN)</label>
+                        <input
+                          type="number" step="any"
+                          value={currentVeiculo.tsaAduaneiroMzn !== undefined ? currentVeiculo.tsaAduaneiroMzn : ''}
+                          onChange={(e) => atualizarVeiculoField(currentVeiculo.id, 'tsaAduaneiroMzn', e.target.value)}
+                          className="input-modern !py-2.5 !px-3 text-xs"
+                          placeholder="1000"
+                        />
+                        <span className="text-[9px] text-slate-400 mt-1 block">Taxa oficial de serviço aduaneiro</span>
+                      </div>
+
+                      <div>
+                        <label className="label-corp">MCNET - Janela Única (MZN)</label>
+                        <input
+                          type="number" step="any"
+                          value={currentVeiculo.mcnetMzn !== undefined ? currentVeiculo.mcnetMzn : ''}
+                          onChange={(e) => atualizarVeiculoField(currentVeiculo.id, 'mcnetMzn', e.target.value)}
+                          className="input-modern !py-2.5 !px-3 text-xs"
+                          placeholder="1550"
+                        />
+                        <span className="text-[9px] text-slate-400 mt-1 block">Emissão do Documento Único (DU)</span>
+                      </div>
+
+                      <div>
+                        <label className="label-corp">Kudumba - Scanner (MZN)</label>
+                        <input
+                          type="number" step="any"
+                          value={currentVeiculo.kudumbaMzn !== undefined ? currentVeiculo.kudumbaMzn : ''}
+                          onChange={(e) => atualizarVeiculoField(currentVeiculo.id, 'kudumbaMzn', e.target.value)}
+                          className="input-modern !py-2.5 !px-3 text-xs"
+                          placeholder="2250"
+                        />
+                        <span className="text-[9px] text-slate-400 mt-1 block">Inspeção não-intrusiva / Scanner</span>
+                      </div>
+
+                      <div>
+                        <label className="label-corp">Taxa de Rádio (MZN)</label>
+                        <input
+                          type="number" step="any"
+                          value={currentVeiculo.taxaRadioMzn !== undefined ? currentVeiculo.taxaRadioMzn : ''}
+                          onChange={(e) => atualizarVeiculoField(currentVeiculo.id, 'taxaRadioMzn', e.target.value)}
+                          className="input-modern !py-2.5 !px-3 text-xs"
+                          placeholder="0"
+                        />
+                        <span className="text-[9px] text-slate-400 mt-1 block">Taxa de rádio aduaneira (se aplicável)</span>
+                      </div>
                     </div>
+                  </div>
 
-                    <div>
-                      <label className="label-corp">IVA Alfândegas (%)</label>
-                      <input
-                        type="number" step="any"
-                        value={veiculoForm.ivaPerc || ''}
-                        onChange={(e) => setVeiculoForm(prev => ({ ...prev, ivaPerc: e.target.value }))}
-                        className="input-modern !py-2.5 !px-3 text-xs font-semibold"
-                        placeholder="16"
-                      />
-                      <span className="text-[9px] text-slate-400 mt-1 block">Taxa oficial de IVA em Moçambique (16%)</span>
+                  {/* 3. Despesas Locais & Portuárias */}
+                  <div className="space-y-3">
+                    <p className="text-xs font-bold text-slate-700 flex items-center gap-2">
+                      <Truck size={14} className="text-corp-blue" />
+                      3. Despesas Locais & Portuárias (Agente, INATRO, Registro, MCTL, Despachante)
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                      <div>
+                        <label className="label-corp">Agente de Navegação (MZN)</label>
+                        <input
+                          type="number" step="any"
+                          value={currentVeiculo.agenteNavegacaoMzn !== undefined ? currentVeiculo.agenteNavegacaoMzn : ''}
+                          onChange={(e) => atualizarVeiculoField(currentVeiculo.id, 'agenteNavegacaoMzn', e.target.value)}
+                          className="input-modern !py-2.5 !px-3 text-xs"
+                          placeholder="9800"
+                        />
+                        <span className="text-[9px] text-slate-400 mt-1 block">Liberação de B/L / Delivery Order</span>
+                      </div>
+
+                      <div>
+                        <label className="label-corp">INATRO (Inspeção) (MZN)</label>
+                        <input
+                          type="number" step="any"
+                          value={currentVeiculo.inatroMzn !== undefined ? currentVeiculo.inatroMzn : ''}
+                          onChange={(e) => atualizarVeiculoField(currentVeiculo.id, 'inatroMzn', e.target.value)}
+                          className="input-modern !py-2.5 !px-3 text-xs"
+                          placeholder="11510"
+                        />
+                        <span className="text-[9px] text-slate-400 mt-1 block">Homologação & Vistoria INATRO</span>
+                      </div>
+
+                      <div>
+                        <label className="label-corp">Registro Automóvel (MZN)</label>
+                        <input
+                          type="number" step="any"
+                          value={currentVeiculo.registroAutomovelMzn !== undefined ? currentVeiculo.registroAutomovelMzn : ''}
+                          onChange={(e) => atualizarVeiculoField(currentVeiculo.id, 'registroAutomovelMzn', e.target.value)}
+                          className="input-modern !py-2.5 !px-3 text-xs"
+                          placeholder="2500"
+                        />
+                        <span className="text-[9px] text-slate-400 mt-1 block">Conservatória do Registo Automóvel</span>
+                      </div>
+
+                      <div>
+                        <label className="label-corp">Chapa de Matrícula (MZN)</label>
+                        <input
+                          type="number" step="any"
+                          value={currentVeiculo.chapaMatriculaMzn !== undefined ? currentVeiculo.chapaMatriculaMzn : ''}
+                          onChange={(e) => atualizarVeiculoField(currentVeiculo.id, 'chapaMatriculaMzn', e.target.value)}
+                          className="input-modern !py-2.5 !px-3 text-xs"
+                          placeholder="5000"
+                        />
+                        <span className="text-[9px] text-slate-400 mt-1 block">Fabrico de Placas Oficiais de Matrícula</span>
+                      </div>
+
+                      <div>
+                        <label className="label-corp">MCTL / Parqueamento Portuário (MZN)</label>
+                        <input
+                          type="number" step="any"
+                          value={currentVeiculo.mctlParqueamentoMzn !== undefined ? currentVeiculo.mctlParqueamentoMzn : ''}
+                          onChange={(e) => atualizarVeiculoField(currentVeiculo.id, 'mctlParqueamentoMzn', e.target.value)}
+                          className="input-modern !py-2.5 !px-3 text-xs"
+                          placeholder="20200"
+                        />
+                        <span className="text-[9px] text-slate-400 mt-1 block">Terminal de Contentores / Parqueamento</span>
+                      </div>
+
+                      <div>
+                        <label className="label-corp">Honorários Despachante (MZN)</label>
+                        <input
+                          type="number" step="any"
+                          value={currentVeiculo.despachanteMzn !== undefined ? currentVeiculo.despachanteMzn : ''}
+                          onChange={(e) => atualizarVeiculoField(currentVeiculo.id, 'despachanteMzn', e.target.value)}
+                          className="input-modern !py-2.5 !px-3 text-xs"
+                          placeholder="16000"
+                        />
+                        <span className="text-[9px] text-slate-400 mt-1 block">Despachante Aduaneiro Oficial</span>
+                      </div>
                     </div>
+                  </div>
 
-                    <div>
-                      <label className="label-corp">Taxas Portuárias & RoRo (MZN)</label>
-                      <input
-                        type="number" step="any"
-                        value={veiculoForm.taxaPortuariaMzn || ''}
-                        onChange={(e) => setVeiculoForm(prev => ({ ...prev, taxaPortuariaMzn: e.target.value }))}
-                        className="input-modern !py-2.5 !px-3 text-xs"
-                        placeholder="120000"
-                      />
-                      <span className="text-[9px] text-slate-400 mt-1 block">Manuseamento portuário, RoRo & Despachante</span>
-                    </div>
+                  {/* 4. Taxa de Serviço PrimeWay & Transporte Inland */}
+                  <div className="space-y-3">
+                    <p className="text-xs font-bold text-slate-700 flex items-center gap-2">
+                      <ShieldCheck size={14} className="text-corp-blue" />
+                      4. Gestão PrimeWay & Transporte Local (Inland)
+                    </p>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-blue-50/50 rounded-2xl border border-blue-100">
+                      <div>
+                        <label className="label-corp text-corp-blue">Taxa de Serviço PrimeWay (%)</label>
+                        <input
+                          type="number" step="any"
+                          value={currentVeiculo.comissaoPerc !== undefined ? currentVeiculo.comissaoPerc : ''}
+                          onChange={(e) => atualizarVeiculoField(currentVeiculo.id, 'comissaoPerc', e.target.value)}
+                          className="input-modern !py-2.5 !px-3 text-xs font-bold border-blue-300"
+                          placeholder="3"
+                        />
+                        <span className="text-[9px] text-corp-blue font-medium mt-1 block">Gestão e acompanhamento integral</span>
+                      </div>
 
-                    <div>
-                      <label className="label-corp">Assessoria PrimeWay (%)</label>
-                      <input
-                        type="number" step="any"
-                        value={veiculoForm.comissaoPerc || ''}
-                        onChange={(e) => setVeiculoForm(prev => ({ ...prev, comissaoPerc: e.target.value }))}
-                        className="input-modern !py-2.5 !px-3 text-xs"
-                        placeholder="3"
-                      />
-                      <span className="text-[9px] text-slate-400 mt-1 block">Gestão e acompanhamento do processo</span>
-                    </div>
+                      <div>
+                        <label className="label-corp text-corp-blue">Base de Cálculo da Taxa</label>
+                        <select
+                          value={currentVeiculo.baseComissao}
+                          onChange={(e) => atualizarVeiculoField(currentVeiculo.id, 'baseComissao', e.target.value as 'cif_impostos' | 'apenas_cif')}
+                          className="input-modern !py-2.5 !px-3 text-xs font-semibold bg-white border-blue-300"
+                        >
+                          <option value="cif_impostos">% sobre (CIF + Impostos Aduaneiros)</option>
+                          <option value="apenas_cif">% Apenas sobre o valor CIF</option>
+                        </select>
+                      </div>
 
-                    <div>
-                      <label className="label-corp">Transporte Inland / Prancha (MZN)</label>
-                      <input
-                        type="number" step="any"
-                        value={veiculoForm.transporteInlandMzn || ''}
-                        onChange={(e) => setVeiculoForm(prev => ({ ...prev, transporteInlandMzn: e.target.value }))}
-                        className="input-modern !py-2.5 !px-3 text-xs"
-                        placeholder="50000"
-                      />
-                      <span className="text-[9px] text-slate-400 mt-1 block">Entrega até ao estaleiro/morada do cliente</span>
+                      <div>
+                        <label className="label-corp">Transporte Inland / Prancha (MZN)</label>
+                        <input
+                          type="number" step="any"
+                          value={currentVeiculo.transporteInlandMzn !== undefined ? currentVeiculo.transporteInlandMzn : ''}
+                          onChange={(e) => atualizarVeiculoField(currentVeiculo.id, 'transporteInlandMzn', e.target.value)}
+                          className="input-modern !py-2.5 !px-3 text-xs"
+                          placeholder="50000"
+                        />
+                        <span className="text-[9px] text-slate-400 mt-1 block">Entrega em prancha até estaleiro/morada</span>
+                      </div>
                     </div>
                   </div>
                 </section>
@@ -4429,116 +4913,229 @@ function AppContent() {
 
           {calcMode === 'veiculos' ? (
             /* Vehicle Invoice Print View */
-            <div className="space-y-8">
-              {/* Vehicle Photo & Spec Summary */}
-              <div className="bg-[#f8fafc] rounded-2xl p-6 border border-[#e2e8f0] flex flex-row gap-6 items-center">
-                {veiculoForm.imageUrl ? (
-                  <img
-                    src={veiculoForm.imageUrl}
-                    alt={veiculoForm.descricao}
-                    crossOrigin="anonymous"
-                    referrerPolicy="no-referrer"
-                    className="w-48 h-36 object-cover rounded-xl border border-[#cbd5e1] shadow-sm shrink-0"
-                  />
-                ) : (
-                  <div className="w-48 h-36 bg-[#e2e8f0] rounded-xl flex items-center justify-center text-[#94a3b8] shrink-0">
-                    <Truck size={48} />
+            <div className="space-y-12">
+              {veiculoCalculatedList.map((v, idx) => (
+                <div key={v.item.id || idx} className="space-y-6 pb-8 border-b border-[#cbd5e1] last:border-b-0">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-[#1A284F] uppercase tracking-wider">
+                      Veículo #{idx + 1}: {v.item.descricao || 'Veículo / Camião'} (Qtd: {v.qty})
+                    </h3>
+                    <span className="text-xs font-semibold text-[#64748b]">
+                      CBM Total: {v.cbmVeiculoTotal.toFixed(2)} m³
+                    </span>
                   </div>
-                )}
-                <div className="space-y-2 flex-1">
-                  <span className="bg-[#1A284F] text-white text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider inline-block">
-                    {veiculoForm.tipo.replace(/_/g, ' ').toUpperCase()}
-                  </span>
-                  <h3 className="text-xl font-bold text-[#0f172a]">{veiculoForm.descricao || 'Veículo / Camião'}</h3>
-                  <p className="text-xs text-[#475569] font-medium">{veiculoForm.chassisEngine}</p>
-                  <div className="grid grid-cols-4 gap-2 pt-2 text-[11px] font-semibold text-[#334155]">
-                    <div><span className="text-[#94a3b8] block text-[9px] uppercase">Comprimento:</span> {(Number(veiculoForm.comprimentoMm)/1000).toFixed(2)} m</div>
-                    <div><span className="text-[#94a3b8] block text-[9px] uppercase">Largura:</span> {(Number(veiculoForm.larguraMm)/1000).toFixed(2)} m</div>
-                    <div><span className="text-[#94a3b8] block text-[9px] uppercase">Altura:</span> {(Number(veiculoForm.alturaMm)/1000).toFixed(2)} m</div>
-                    <div><span className="text-[#94a3b8] block text-[9px] uppercase">Peso Bruto:</span> {veiculoForm.pesoTons} Toneladas</div>
+
+                  {/* Vehicle Photo & Spec Summary */}
+                  <div className="bg-[#f8fafc] rounded-2xl p-6 border border-[#e2e8f0] flex flex-row gap-6 items-center">
+                    {v.item.imageUrl ? (
+                      <img
+                        src={v.item.imageUrl}
+                        alt={v.item.descricao}
+                        crossOrigin="anonymous"
+                        referrerPolicy="no-referrer"
+                        className="w-48 h-36 object-cover rounded-xl border border-[#cbd5e1] shadow-sm shrink-0"
+                      />
+                    ) : (
+                      <div className="w-48 h-36 bg-[#e2e8f0] rounded-xl flex items-center justify-center text-[#94a3b8] shrink-0">
+                        <Truck size={48} />
+                      </div>
+                    )}
+                    <div className="space-y-2 flex-1">
+                      <span className="bg-[#1A284F] text-white text-[10px] font-bold px-3 py-1 rounded-full uppercase tracking-wider inline-block">
+                        {v.item.tipo.replace(/_/g, ' ').toUpperCase()}
+                      </span>
+                      <h4 className="text-lg font-bold text-[#0f172a]">{v.item.descricao || 'Veículo / Camião'}</h4>
+                      <p className="text-xs text-[#475569] font-medium">{v.item.chassisEngine}</p>
+                      <div className="grid grid-cols-4 gap-2 pt-2 text-[11px] font-semibold text-[#334155]">
+                        <div><span className="text-[#94a3b8] block text-[9px] uppercase">Comprimento:</span> {(Number(v.item.comprimentoMm)/1000).toFixed(2)} m</div>
+                        <div><span className="text-[#94a3b8] block text-[9px] uppercase">Largura:</span> {(Number(v.item.larguraMm)/1000).toFixed(2)} m</div>
+                        <div><span className="text-[#94a3b8] block text-[9px] uppercase">Altura:</span> {(Number(v.item.alturaMm)/1000).toFixed(2)} m</div>
+                        <div><span className="text-[#94a3b8] block text-[9px] uppercase">Peso Bruto:</span> {v.item.pesoTons} Toneladas</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Port & Logistics Summary Cards */}
+                  <div className="grid grid-cols-3 gap-4">
+                    <div className="bg-[#f8fafc] p-4 rounded-xl border border-[#e2e8f0]">
+                      <p className="text-[10px] font-bold text-[#94a3b8] uppercase tracking-wider">Porto de Origem</p>
+                      <p className="text-sm font-bold text-[#0f172a]">{v.item.portoOrigem}</p>
+                    </div>
+                    <div className="bg-[#f8fafc] p-4 rounded-xl border border-[#e2e8f0]">
+                      <p className="text-[10px] font-bold text-[#94a3b8] uppercase tracking-wider">Porto de Destino</p>
+                      <p className="text-sm font-bold text-[#0f172a]">{v.item.portoDestino}</p>
+                    </div>
+                    <div className="bg-[#e0f2fe] p-4 rounded-xl border border-[#bae6fd]">
+                      <p className="text-[10px] font-bold text-[#0284c7] uppercase tracking-wider">Volume Faturado CBM</p>
+                      <p className="text-sm font-bold text-[#0369a1]">{v.cbmVeiculoTotal.toFixed(2)} m³</p>
+                    </div>
+                  </div>
+
+                  {/* Vehicle Cost Breakdown Table */}
+                  <table className="w-full text-left border-collapse mb-6">
+                    <thead>
+                      <tr className="bg-[#0f172a] text-[#ffffff] text-[10px] uppercase tracking-widest">
+                        <th className="py-4 px-6 font-semibold">Componente da Importação Veicular (Pauta Alfandegária MOZ)</th>
+                        <th className="py-4 px-6 font-semibold text-center">Referência / Taxa</th>
+                        <th className="py-4 px-6 font-semibold text-right">Valor em MZN</th>
+                        <th className="py-4 px-6 font-semibold text-right">Valor em USD</th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-[#334155] text-sm">
+                      {/* Despesas da Viatura */}
+                      <tr className="bg-[#f8fafc] font-bold text-[#0f172a] border-b border-[#cbd5e1]">
+                        <td colSpan={4} className="py-2.5 px-6 text-xs uppercase tracking-wider text-[#1A284F]">
+                          A. Despesas da Viatura (CIF)
+                        </td>
+                      </tr>
+                      <tr className="border-b border-[#f1f5f9]">
+                        <td className="py-3 px-6 font-bold text-[#0f172a]">01. Preço CIF Porto (Veículo + Frete + Seguro)</td>
+                        <td className="py-3 px-6 text-center text-xs">CIF Porto Destino</td>
+                        <td className="py-3 px-6 text-right font-bold">{formatoMoeda(v.cifMzn)} MZN</td>
+                        <td className="py-3 px-6 text-right font-bold">${formatoMoeda(v.cifUsd)} USD</td>
+                      </tr>
+
+                      {/* Despesas Aduaneiras */}
+                      <tr className="bg-[#f8fafc] font-bold text-[#0f172a] border-b border-[#cbd5e1]">
+                        <td colSpan={4} className="py-2.5 px-6 text-xs uppercase tracking-wider text-[#1A284F]">
+                          B. Despesas Aduaneiras (Alfândegas de Moçambique)
+                        </td>
+                      </tr>
+                      <tr className="border-b border-[#f1f5f9]">
+                        <td className="py-3 px-6">02. Direitos Aduaneiros</td>
+                        <td className="py-3 px-6 text-center text-xs">{v.direitosPerc}% do CIF</td>
+                        <td className="py-3 px-6 text-right">{formatoMoeda(v.direitosMzn)} MZN</td>
+                        <td className="py-3 px-6 text-right">${formatoMoeda(v.direitosMzn / veiculoResults.cambio)} USD</td>
+                      </tr>
+                      {v.icePerc > 0 && (
+                        <tr className="border-b border-[#f1f5f9]">
+                          <td className="py-3 px-6">03. Imposto de Consumo Específico (ICE)</td>
+                          <td className="py-3 px-6 text-center text-xs">{v.icePerc}%</td>
+                          <td className="py-3 px-6 text-right">{formatoMoeda(v.iceMzn)} MZN</td>
+                          <td className="py-3 px-6 text-right">${formatoMoeda(v.iceMzn / veiculoResults.cambio)} USD</td>
+                        </tr>
+                      )}
+                      <tr className="border-b border-[#f1f5f9]">
+                        <td className="py-3 px-6">04. IVA (CIF + Direitos + ICE)</td>
+                        <td className="py-3 px-6 text-center text-xs">{v.ivaPerc}% Oficial</td>
+                        <td className="py-3 px-6 text-right">{formatoMoeda(v.ivaMzn)} MZN</td>
+                        <td className="py-3 px-6 text-right">${formatoMoeda(v.ivaMzn / veiculoResults.cambio)} USD</td>
+                      </tr>
+                      <tr className="border-b border-[#f1f5f9]">
+                        <td className="py-3 px-6">05. Taxa de Serviços Aduaneiros (TSA)</td>
+                        <td className="py-3 px-6 text-center text-xs">TSA Regulamentar</td>
+                        <td className="py-3 px-6 text-right">{formatoMoeda(v.tsaAduaneiroMzn)} MZN</td>
+                        <td className="py-3 px-6 text-right">${formatoMoeda(v.tsaAduaneiroMzn / veiculoResults.cambio)} USD</td>
+                      </tr>
+                      {v.taxaRadioMzn > 0 && (
+                        <tr className="border-b border-[#f1f5f9]">
+                          <td className="py-3 px-6">06. Taxa de Rádio Aduaneira</td>
+                          <td className="py-3 px-6 text-center text-xs">Fixa</td>
+                          <td className="py-3 px-6 text-right">{formatoMoeda(v.taxaRadioMzn)} MZN</td>
+                          <td className="py-3 px-6 text-right">${formatoMoeda(v.taxaRadioMzn / veiculoResults.cambio)} USD</td>
+                        </tr>
+                      )}
+                      <tr className="border-b border-[#f1f5f9]">
+                        <td className="py-3 px-6">07. MCNET (Janela Única Eletrónica - DU)</td>
+                        <td className="py-3 px-6 text-center text-xs">Taxa MCNET</td>
+                        <td className="py-3 px-6 text-right">{formatoMoeda(v.mcnetMzn)} MZN</td>
+                        <td className="py-3 px-6 text-right">${formatoMoeda(v.mcnetMzn / veiculoResults.cambio)} USD</td>
+                      </tr>
+                      <tr className="border-b border-[#f1f5f9]">
+                        <td className="py-3 px-6">08. Kudumba (Inspeção Não Intrusiva / Scanner)</td>
+                        <td className="py-3 px-6 text-center text-xs">Scanner Portuário</td>
+                        <td className="py-3 px-6 text-right">{formatoMoeda(v.kudumbaMzn)} MZN</td>
+                        <td className="py-3 px-6 text-right">${formatoMoeda(v.kudumbaMzn / veiculoResults.cambio)} USD</td>
+                      </tr>
+                      <tr className="bg-[#f1f5f9] font-bold text-[#0f172a] border-b border-[#e2e8f0]">
+                        <td className="py-2.5 px-6 text-xs text-[#b91c1c]">Total Despesas Aduaneiras</td>
+                        <td className="py-2.5 px-6 text-center text-[10px] text-[#64748b]">Impostos + MCNET + Kudumba + TSA</td>
+                        <td className="py-2.5 px-6 text-right text-xs text-[#b91c1c]">{formatoMoeda(v.totalImpostosMzn)} MZN</td>
+                        <td className="py-2.5 px-6 text-right text-xs text-[#b91c1c]">${formatoMoeda(v.totalImpostosMzn / veiculoResults.cambio)} USD</td>
+                      </tr>
+
+                      {/* Despesas Locais & Portuárias */}
+                      <tr className="bg-[#f8fafc] font-bold text-[#0f172a] border-b border-[#cbd5e1]">
+                        <td colSpan={4} className="py-2.5 px-6 text-xs uppercase tracking-wider text-[#1A284F]">
+                          C. Despesas Locais & Portuárias
+                        </td>
+                      </tr>
+                      <tr className="border-b border-[#f1f5f9]">
+                        <td className="py-3 px-6">09. Agente de Navegação (Delivery Order / BL Release)</td>
+                        <td className="py-3 px-6 text-center text-xs">Frete Local / Agente</td>
+                        <td className="py-3 px-6 text-right">{formatoMoeda(v.agenteNavegacaoMzn)} MZN</td>
+                        <td className="py-3 px-6 text-right">${formatoMoeda(v.agenteNavegacaoMzn / veiculoResults.cambio)} USD</td>
+                      </tr>
+                      <tr className="border-b border-[#f1f5f9]">
+                        <td className="py-3 px-6">10. INATRO (Inspeção, Vistoria & Homologação)</td>
+                        <td className="py-3 px-6 text-center text-xs">INATRO Oficial</td>
+                        <td className="py-3 px-6 text-right">{formatoMoeda(v.inatroMzn)} MZN</td>
+                        <td className="py-3 px-6 text-right">${formatoMoeda(v.inatroMzn / veiculoResults.cambio)} USD</td>
+                      </tr>
+                      <tr className="border-b border-[#f1f5f9]">
+                        <td className="py-3 px-6">11. Registro Automóvel (Conservatória)</td>
+                        <td className="py-3 px-6 text-center text-xs">Registo Propriedade</td>
+                        <td className="py-3 px-6 text-right">{formatoMoeda(v.registroAutomovelMzn)} MZN</td>
+                        <td className="py-3 px-6 text-right">${formatoMoeda(v.registroAutomovelMzn / veiculoResults.cambio)} USD</td>
+                      </tr>
+                      <tr className="border-b border-[#f1f5f9]">
+                        <td className="py-3 px-6">12. Chapa de Matrícula Oficial</td>
+                        <td className="py-3 px-6 text-center text-xs">Fabrico de Placas</td>
+                        <td className="py-3 px-6 text-right">{formatoMoeda(v.chapaMatriculaMzn)} MZN</td>
+                        <td className="py-3 px-6 text-right">${formatoMoeda(v.chapaMatriculaMzn / veiculoResults.cambio)} USD</td>
+                      </tr>
+                      <tr className="border-b border-[#f1f5f9]">
+                        <td className="py-3 px-6">13. MCTL / Parqueamento Portuário</td>
+                        <td className="py-3 px-6 text-center text-xs">Terminal & Parqueamento</td>
+                        <td className="py-3 px-6 text-right">{formatoMoeda(v.mctlParqueamentoMzn)} MZN</td>
+                        <td className="py-3 px-6 text-right">${formatoMoeda(v.mctlParqueamentoMzn / veiculoResults.cambio)} USD</td>
+                      </tr>
+                      <tr className="border-b border-[#f1f5f9]">
+                        <td className="py-3 px-6">14. Honorários do Despachante Aduaneiro</td>
+                        <td className="py-3 px-6 text-center text-xs">Despachante Oficial</td>
+                        <td className="py-3 px-6 text-right">{formatoMoeda(v.despachanteMzn)} MZN</td>
+                        <td className="py-3 px-6 text-right">${formatoMoeda(v.despachanteMzn / veiculoResults.cambio)} USD</td>
+                      </tr>
+                      <tr className="border-b border-[#f1f5f9]">
+                        <td className="py-3 px-6">15. Transporte Inland (Prancha / Reboque Estaleiro)</td>
+                        <td className="py-3 px-6 text-center text-xs">Entrega Local</td>
+                        <td className="py-3 px-6 text-right">{formatoMoeda(v.transporteInlandMzn)} MZN</td>
+                        <td className="py-3 px-6 text-right">${formatoMoeda(v.transporteInlandMzn / veiculoResults.cambio)} USD</td>
+                      </tr>
+                      <tr className="bg-[#f1f5f9] font-bold text-[#0f172a] border-b border-[#e2e8f0]">
+                        <td className="py-2.5 px-6 text-xs text-[#b91c1c]">Total Despesas Locais & Portuárias</td>
+                        <td className="py-2.5 px-6 text-center text-[10px] text-[#64748b]">Agente + INATRO + Matrícula + MCTL + Despachante</td>
+                        <td className="py-2.5 px-6 text-right text-xs text-[#b91c1c]">{formatoMoeda(v.totalDespesasLocaisPortuariasMzn)} MZN</td>
+                        <td className="py-2.5 px-6 text-right text-xs text-[#b91c1c]">${formatoMoeda(v.totalDespesasLocaisPortuariasMzn / veiculoResults.cambio)} USD</td>
+                      </tr>
+
+                      {/* Taxa de Serviço PrimeWay */}
+                      <tr className="border-b border-[#f1f5f9] bg-blue-50/50">
+                        <td className="py-3 px-6 font-bold text-[#1A284F]">
+                          16. Taxa de Serviço & Gestão PrimeWay
+                        </td>
+                        <td className="py-3 px-6 text-center text-xs font-bold text-[#1A284F]">
+                          {v.comissaoPerc}% {v.item.baseComissao === 'cif_impostos' ? 'sobre (CIF + Impostos)' : 'sobre CIF'}
+                        </td>
+                        <td className="py-3 px-6 text-right font-bold text-[#1A284F]">{formatoMoeda(v.comissaoMzn)} MZN</td>
+                        <td className="py-3 px-6 text-right font-bold text-[#1A284F]">${formatoMoeda(v.comissaoMzn / veiculoResults.cambio)} USD</td>
+                      </tr>
+                    </tbody>
+                  </table>
+
+                  <div className="flex justify-end">
+                    <div className="bg-[#f1f5f9] p-3 px-6 rounded-xl text-right font-bold text-xs text-[#1A284F]">
+                      Subtotal {v.item.descricao || 'Veículo'}: MZN {formatoMoeda(v.totalMzn)} | USD ${formatoMoeda(v.totalUsd)}
+                    </div>
                   </div>
                 </div>
-              </div>
+              ))}
 
-              {/* Port & Logistics Summary Cards */}
-              <div className="grid grid-cols-3 gap-4">
-                <div className="bg-[#f8fafc] p-4 rounded-xl border border-[#e2e8f0]">
-                  <p className="text-[10px] font-bold text-[#94a3b8] uppercase tracking-wider">Porto de Origem</p>
-                  <p className="text-sm font-bold text-[#0f172a]">{veiculoForm.portoOrigem}</p>
-                </div>
-                <div className="bg-[#f8fafc] p-4 rounded-xl border border-[#e2e8f0]">
-                  <p className="text-[10px] font-bold text-[#94a3b8] uppercase tracking-wider">Porto de Destino</p>
-                  <p className="text-sm font-bold text-[#0f172a]">{veiculoForm.portoDestino}</p>
-                </div>
-                <div className="bg-[#e0f2fe] p-4 rounded-xl border border-[#bae6fd]">
-                  <p className="text-[10px] font-bold text-[#0284c7] uppercase tracking-wider">Volume Faturado CBM</p>
-                  <p className="text-sm font-bold text-[#0369a1]">{veiculoResults.cbmVeiculo.toFixed(2)} m³</p>
-                </div>
-              </div>
-
-              {/* Vehicle Cost Breakdown Table */}
-              <table className="w-full text-left border-collapse mb-8">
-                <thead>
-                  <tr className="bg-[#0f172a] text-[#ffffff] text-[10px] uppercase tracking-widest">
-                    <th className="py-4 px-6 font-semibold">Componente da Importação Veicular</th>
-                    <th className="py-4 px-6 font-semibold text-center">Referência / Taxa</th>
-                    <th className="py-4 px-6 font-semibold text-right">Valor em MZN</th>
-                    <th className="py-4 px-6 font-semibold text-right">Valor em USD</th>
-                  </tr>
-                </thead>
-                <tbody className="text-[#334155] text-sm">
-                  <tr className="border-b border-[#f1f5f9]">
-                    <td className="py-4 px-6 font-bold text-[#0f172a]">01. Preço CIF China (Veículo + Frete + Seguro)</td>
-                    <td className="py-4 px-6 text-center text-xs">CIF Porto China</td>
-                    <td className="py-4 px-6 text-right font-bold">{formatoMoeda(veiculoResults.cifMzn)} MZN</td>
-                    <td className="py-4 px-6 text-right font-bold">${formatoMoeda(veiculoResults.cifUsd)} USD</td>
-                  </tr>
-                  <tr className="border-b border-[#f1f5f9]">
-                    <td className="py-4 px-6">02. Direitos Aduaneiros Alfandegários</td>
-                    <td className="py-4 px-6 text-center text-xs">{veiculoResults.direitosPerc}% do CIF</td>
-                    <td className="py-4 px-6 text-right">{formatoMoeda(veiculoResults.direitosMzn)} MZN</td>
-                    <td className="py-4 px-6 text-right">${formatoMoeda(veiculoResults.direitosMzn / veiculoResults.cambio)} USD</td>
-                  </tr>
-                  {veiculoResults.icePerc > 0 && (
-                    <tr className="border-b border-[#f1f5f9]">
-                      <td className="py-4 px-6">03. Imposto de Consumo Específico (ICE)</td>
-                      <td className="py-4 px-6 text-center text-xs">{veiculoResults.icePerc}%</td>
-                      <td className="py-4 px-6 text-right">{formatoMoeda(veiculoResults.iceMzn)} MZN</td>
-                      <td className="py-4 px-6 text-right">${formatoMoeda(veiculoResults.iceMzn / veiculoResults.cambio)} USD</td>
-                    </tr>
-                  )}
-                  <tr className="border-b border-[#f1f5f9]">
-                    <td className="py-4 px-6">04. IVA Alfândegas Moçambique</td>
-                    <td className="py-4 px-6 text-center text-xs">{veiculoResults.ivaPerc}% Oficial</td>
-                    <td className="py-4 px-6 text-right">{formatoMoeda(veiculoResults.ivaMzn)} MZN</td>
-                    <td className="py-4 px-6 text-right">${formatoMoeda(veiculoResults.ivaMzn / veiculoResults.cambio)} USD</td>
-                  </tr>
-                  <tr className="border-b border-[#f1f5f9]">
-                    <td className="py-4 px-6">05. Taxas Portuárias (RoRo) & Despachante</td>
-                    <td className="py-4 px-6 text-center text-xs">Manuseamento</td>
-                    <td className="py-4 px-6 text-right">{formatoMoeda(veiculoResults.taxaPortuariaMzn)} MZN</td>
-                    <td className="py-4 px-6 text-right">${formatoMoeda(veiculoResults.taxaPortuariaMzn / veiculoResults.cambio)} USD</td>
-                  </tr>
-                  <tr className="border-b border-[#f1f5f9]">
-                    <td className="py-4 px-6">06. Assessoria & Gestão PrimeWay</td>
-                    <td className="py-4 px-6 text-center text-xs">{veiculoResults.comissaoPerc}%</td>
-                    <td className="py-4 px-6 text-right">{formatoMoeda(veiculoResults.comissaoMzn)} MZN</td>
-                    <td className="py-4 px-6 text-right">${formatoMoeda(veiculoResults.comissaoMzn / veiculoResults.cambio)} USD</td>
-                  </tr>
-                  <tr className="border-b border-[#f1f5f9]">
-                    <td className="py-4 px-6">07. Transporte Inland (Prancha/Destino Final)</td>
-                    <td className="py-4 px-6 text-center text-xs">Reboque/Estaleiro</td>
-                    <td className="py-4 px-6 text-right">{formatoMoeda(veiculoResults.transporteInlandMzn)} MZN</td>
-                    <td className="py-4 px-6 text-right">${formatoMoeda(veiculoResults.transporteInlandMzn / veiculoResults.cambio)} USD</td>
-                  </tr>
-                </tbody>
-              </table>
-
-              {/* Totals */}
-              <div className="flex justify-end mb-12">
+              {/* Aggregated Totals */}
+              <div className="flex justify-end mb-12 pt-6">
                 <div className="w-full max-w-md space-y-3">
                   <div className="bg-[#1A284F] text-[#ffffff] p-6 rounded-xl flex justify-between items-center">
-                    <span className="font-bold uppercase tracking-widest text-xs">TOTAL ESTIMADO VEÍCULO:</span>
+                    <span className="font-bold uppercase tracking-widest text-xs">TOTAL ESTIMADO GERAL:</span>
                     <span className="text-2xl font-black">{moeda} {formatoMoeda(results.totalFinal)}</span>
                   </div>
                   <p className="text-[10px] text-[#64748b] text-right font-semibold">
