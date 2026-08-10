@@ -41,6 +41,7 @@ import {
   Zap
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer, Legend } from 'recharts';
 import { 
   signInWithPopup, 
   GoogleAuthProvider, 
@@ -384,6 +385,64 @@ const compressAndSetImage = (file: File, callback: (base64: string) => void) => 
     img.src = event.target?.result as string;
   };
   reader.readAsDataURL(file);
+};
+
+const CostDistributionChart = ({ results, calcMode, veiculoResults, moeda, formatoMoeda }: any) => {
+  let chartData: { name: string; value: number; fill: string }[] = [];
+  if (calcMode === 'veiculos') {
+    chartData = [
+      { name: 'Veículo (CIF)', value: veiculoResults.totalCifMzn, fill: '#3b82f6' },
+      { name: 'Aduaneiras', value: veiculoResults.totalImpostosMzn, fill: '#ef4444' },
+      { name: 'Locais & Port.', value: veiculoResults.totalDespesasLocaisPortuariasMzn, fill: '#f59e0b' },
+      { name: 'Gestão PrimeWay', value: veiculoResults.comissaoMzn, fill: '#10b981' },
+    ].filter(d => d.value > 0);
+  } else {
+    chartData = [
+      { name: 'Mercadorias', value: results.subtotalProdutos, fill: '#3b82f6' },
+      { name: 'Frete & Despacho', value: results.valorFreteInt + results.valorDespacho, fill: '#ef4444' },
+      { name: 'Entrega Local', value: results.valorEnvioLocal, fill: '#f59e0b' },
+      { name: 'Serviços & Gestão', value: results.valorTaxaProc + results.valorComissao + results.taxaLevantamento, fill: '#10b981' },
+    ].filter(d => d.value > 0);
+  }
+
+  if (chartData.length === 0) return null;
+
+  return (
+    <div className="bento-item !p-5 sm:!p-6 mt-6">
+      <h3 className="text-xs font-bold text-slate-800 uppercase tracking-widest mb-4">Distribuição de Custos</h3>
+      <div className="h-56 w-full relative">
+        <ResponsiveContainer width="100%" height="100%">
+          <PieChart>
+            <Pie
+              data={chartData}
+              cx="50%"
+              cy="50%"
+              innerRadius={60}
+              outerRadius={80}
+              paddingAngle={2}
+              dataKey="value"
+              stroke="none"
+            >
+              {chartData.map((entry, index) => (
+                <Cell key={`cell-${index}`} fill={entry.fill} />
+              ))}
+            </Pie>
+            <RechartsTooltip 
+              formatter={(value: number) => `${moeda} ${formatoMoeda(value)}`}
+              contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', backgroundColor: '#fff', color: '#0f172a' }}
+              itemStyle={{ color: '#0f172a', fontWeight: 600, fontSize: '12px' }}
+            />
+            <Legend 
+              verticalAlign="bottom" 
+              height={36} 
+              iconType="circle"
+              wrapperStyle={{ fontSize: '10px', fontWeight: 600, color: '#475569', marginTop: '10px' }}
+            />
+          </PieChart>
+        </ResponsiveContainer>
+      </div>
+    </div>
+  );
 };
 
 export default function App() {
@@ -3463,6 +3522,14 @@ function AppContent() {
                 </div>
               </div>
             </div>
+
+            <CostDistributionChart 
+              results={results} 
+              calcMode={calcMode} 
+              veiculoResults={veiculoResults} 
+              moeda={moeda} 
+              formatoMoeda={formatoMoeda} 
+            />
 
             {/* Resale Simulation */}
             <section className="bento-item !p-8">
