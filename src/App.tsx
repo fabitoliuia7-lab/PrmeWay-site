@@ -387,64 +387,6 @@ const compressAndSetImage = (file: File, callback: (base64: string) => void) => 
   reader.readAsDataURL(file);
 };
 
-const CostDistributionChart = ({ results, calcMode, veiculoResults, moeda, formatoMoeda }: any) => {
-  let chartData: { name: string; value: number; fill: string }[] = [];
-  if (calcMode === 'veiculos') {
-    chartData = [
-      { name: 'Veículo (CIF)', value: veiculoResults.totalCifMzn, fill: '#3b82f6' },
-      { name: 'Aduaneiras', value: veiculoResults.totalImpostosMzn, fill: '#ef4444' },
-      { name: 'Locais & Port.', value: veiculoResults.totalDespesasLocaisPortuariasMzn, fill: '#f59e0b' },
-      { name: 'Gestão PrimeWay', value: veiculoResults.comissaoMzn, fill: '#10b981' },
-    ].filter(d => d.value > 0);
-  } else {
-    chartData = [
-      { name: 'Mercadorias', value: results.subtotalProdutos, fill: '#3b82f6' },
-      { name: 'Frete & Despacho', value: results.valorFreteInt + results.valorDespacho, fill: '#ef4444' },
-      { name: 'Entrega Local', value: results.valorEnvioLocal, fill: '#f59e0b' },
-      { name: 'Serviços & Gestão', value: results.valorTaxaProc + results.valorComissao + results.taxaLevantamento, fill: '#10b981' },
-    ].filter(d => d.value > 0);
-  }
-
-  if (chartData.length === 0) return null;
-
-  return (
-    <div className="bento-item !p-5 sm:!p-6 mt-6">
-      <h3 className="text-xs font-bold text-slate-800 uppercase tracking-widest mb-4">Distribuição de Custos</h3>
-      <div className="h-56 w-full relative">
-        <ResponsiveContainer width="100%" height="100%">
-          <PieChart>
-            <Pie
-              data={chartData}
-              cx="50%"
-              cy="50%"
-              innerRadius={60}
-              outerRadius={80}
-              paddingAngle={2}
-              dataKey="value"
-              stroke="none"
-            >
-              {chartData.map((entry, index) => (
-                <Cell key={`cell-${index}`} fill={entry.fill} />
-              ))}
-            </Pie>
-            <RechartsTooltip 
-              formatter={(value: number) => `${moeda} ${formatoMoeda(value)}`}
-              contentStyle={{ borderRadius: '12px', border: '1px solid #e2e8f0', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', backgroundColor: '#fff', color: '#0f172a' }}
-              itemStyle={{ color: '#0f172a', fontWeight: 600, fontSize: '12px' }}
-            />
-            <Legend 
-              verticalAlign="bottom" 
-              height={36} 
-              iconType="circle"
-              wrapperStyle={{ fontSize: '10px', fontWeight: 600, color: '#475569', marginTop: '10px' }}
-            />
-          </PieChart>
-        </ResponsiveContainer>
-      </div>
-    </div>
-  );
-};
-
 export default function App() {
   return (
     <ErrorBoundary>
@@ -3507,12 +3449,14 @@ function AppContent() {
                     )} 
                     {isGeneratingPdf ? 'Gerando...' : 'Exportar Fatura Proforma'}
                   </button>
-                  <button 
-                    onClick={preencherDebitNoteComCotacao}
-                    className="w-full btn-modern-primary !bg-corp-blue/20 !text-white border border-white/30 hover:!bg-corp-blue/30 transition-all !py-3 flex items-center justify-center gap-2 !px-4 shadow-md"
-                  >
-                    <FileText size={18} /> Emitir Factura Débito
-                  </button>
+                  {isAdmin && (
+                    <button 
+                      onClick={preencherDebitNoteComCotacao}
+                      className="w-full btn-modern-primary !bg-corp-blue/20 !text-white border border-white/30 hover:!bg-corp-blue/30 transition-all !py-3 flex items-center justify-center gap-2 !px-4 shadow-md"
+                    >
+                      <FileText size={18} /> Emitir Factura Débito
+                    </button>
+                  )}
                   <button 
                     onClick={limparTudo} 
                     className="w-full text-[10px] font-semibold uppercase tracking-[0.3em] text-white/30 hover:text-white transition-all text-center py-2 flex items-center justify-center gap-2"
@@ -3522,14 +3466,6 @@ function AppContent() {
                 </div>
               </div>
             </div>
-
-            <CostDistributionChart 
-              results={results} 
-              calcMode={calcMode} 
-              veiculoResults={veiculoResults} 
-              moeda={moeda} 
-              formatoMoeda={formatoMoeda} 
-            />
 
             {/* Resale Simulation */}
             <section className="bento-item !p-8">
@@ -4215,12 +4151,14 @@ function AppContent() {
                 >
                   Cotações
                 </button>
-                <button 
-                  onClick={() => setHistoryTab('debitNotes')}
-                  className={`px-6 py-2 text-xs font-bold uppercase tracking-widest transition-colors border-b-2 ${historyTab === 'debitNotes' ? 'border-corp-blue text-corp-blue' : 'border-transparent text-slate-400'}`}
-                >
-                  Facturas (Debit)
-                </button>
+                {isAdmin && (
+                  <button 
+                    onClick={() => setHistoryTab('debitNotes')}
+                    className={`px-6 py-2 text-xs font-bold uppercase tracking-widest transition-colors border-b-2 ${historyTab === 'debitNotes' ? 'border-corp-blue text-corp-blue' : 'border-transparent text-slate-400'}`}
+                  >
+                    Facturas (Debit)
+                  </button>
+                )}
               </div>
               
               <div className="flex-1 overflow-y-auto space-y-4 pr-2">
@@ -5201,9 +5139,9 @@ function AppContent() {
               {/* Aggregated Totals */}
               <div className="flex justify-end mb-12 pt-6">
                 <div className="w-full max-w-md space-y-3">
-                  <div className="bg-[#1A284F] text-[#ffffff] p-6 rounded-xl flex justify-between items-center">
+                  <div className="bg-[#1A284F] text-[#ffffff] p-6 rounded-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
                     <span className="font-bold uppercase tracking-widest text-xs">TOTAL ESTIMADO GERAL:</span>
-                    <span className="text-2xl font-black">{moeda} {formatoMoeda(results.totalFinal)}</span>
+                    <span className="text-2xl font-black break-words">{moeda} {formatoMoeda(results.totalFinal)}</span>
                   </div>
                   <p className="text-[10px] text-[#64748b] text-right font-semibold">
                     Equivalente a: MZN {formatoMoeda(veiculoResults.totalMzn)} | USD ${formatoMoeda(veiculoResults.totalUsd)} (Câmbio: 1 USD = {veiculoResults.cambio} MZN)
@@ -5387,11 +5325,11 @@ function AppContent() {
                   </div>
                 )}
               </div>
-              <div className="bg-[#1A284F] text-[#ffffff] p-6 rounded-xl flex flex-wrap md:flex-nowrap justify-between items-center gap-2">
-                <span className="font-bold uppercase tracking-widest text-xs whitespace-nowrap">
+              <div className="bg-[#1A284F] text-[#ffffff] p-6 rounded-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 sm:gap-4 overflow-hidden">
+                <span className="font-bold uppercase tracking-widest text-xs">
                   {results.valorDesconto > 0 ? 'Total Estimado com Desconto' : 'Total Estimado'}
                 </span>
-                <span className="text-2xl sm:text-3xl font-black whitespace-nowrap tracking-tight">{moeda} {formatoMoeda(results.totalFinal)}</span>
+                <span className="text-2xl sm:text-3xl font-black tracking-tight break-all sm:break-words">{moeda} {formatoMoeda(results.totalFinal)}</span>
               </div>
             </div>
           </div>
