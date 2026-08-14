@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 192 192" width="192" height="192">
+  <defs>
+    <linearGradient id="pwGrad192" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="100%" stop-color="#1e3a8a"/>
+    </linearGradient>
+    <linearGradient id="accentGrad192" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#2563eb"/>
+    </linearGradient>
+  </defs>
+  <rect width="192" height="192" rx="42" fill="url(#pwGrad192)"/>
+  <circle cx="96" cy="96" r="68" stroke="#334155" stroke-width="2" fill="none" opacity="0.6"/>
+  <!-- Modern Geometric PW Shipping Motif -->
+  <path d="M52 120 L96 46 L140 120 L120 120 L96 78 L72 120 Z" fill="url(#accentGrad192)"/>
+  <path d="M68 132 L96 148 L124 132 L132 144 L96 164 L60 144 Z" fill="#38bdf8"/>
+  <circle cx="96" cy="96" r="10" fill="#ffffff"/>
+</svg>

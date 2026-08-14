@@ -1,5 +1,6 @@
 {
   "name": "PrimeWay Invest & Logística",
   "description": "Soluções globais de logística e importação, conectando Moçambique ao mercado internacional com eficiência e transparência.",
-  "requestFramePermissions": []
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

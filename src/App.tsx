@@ -38,7 +38,13 @@ import {
   Check,
   Upload,
   ImageIcon,
-  Zap
+  Zap,
+  Smartphone,
+  DownloadCloud,
+  Wifi,
+  WifiOff,
+  Share2,
+  Sparkles
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer, Legend } from 'recharts';
@@ -517,9 +523,17 @@ function AppContent() {
   const [activeCoupon, setActiveCoupon] = useState<{ code: string; type: 'percentage' | 'fixed'; value: number } | null>(null);
   const [couponMessage, setCouponMessage] = useState<{ text: string; isError: boolean } | null>(null);
   
+  // PWA & Connectivity States
+  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [isInstallable, setIsInstallable] = useState(false);
+  const [showInstallModal, setShowInstallModal] = useState(false);
+  const [isOnline, setIsOnline] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [isIOS, setIsIOS] = useState(false);
+  const [isStandalone, setIsStandalone] = useState(false);
+  
   // Tracking State
   const [trackingCode, setTrackingCode] = useState('');
-  const [trackingResult, setTrackingResult] = useState<null | { status: string, location: string, date: string, history: any[] }>(null);
+  const [trackingResult, setTrackingResult] = useState<null | { status: string, location: string, date: string, history: any[], imageUrl?: string, weight?: string, cbm?: string }>(null);
   const [isTracking, setIsTracking] = useState(false);
   const [trackingError, setTrackingError] = useState('');
   const [showAdminTracking, setShowAdminTracking] = useState(false);
@@ -527,6 +541,9 @@ function AppContent() {
   const [adminTrackingStatus, setAdminTrackingStatus] = useState('');
   const [adminTrackingLocation, setAdminTrackingLocation] = useState('');
   const [adminTrackingDate, setAdminTrackingDate] = useState('');
+  const [adminTrackingWeight, setAdminTrackingWeight] = useState('');
+  const [adminTrackingCBM, setAdminTrackingCBM] = useState('');
+  const [adminTrackingImage, setAdminTrackingImage] = useState<File | null>(null);
   const [isSavingTracking, setIsSavingTracking] = useState(false);
 
   // Rodoviario States
@@ -625,6 +642,43 @@ function AppContent() {
     }
   ]);
 
+  const compressImage = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target?.result as string;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 800;
+          const MAX_HEIGHT = 800;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > MAX_WIDTH) {
+              height *= MAX_WIDTH / width;
+              width = MAX_WIDTH;
+            }
+          } else {
+            if (height > MAX_HEIGHT) {
+              width *= MAX_HEIGHT / height;
+              height = MAX_HEIGHT;
+            }
+          }
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          ctx?.drawImage(img, 0, 0, width, height);
+          resolve(canvas.toDataURL('image/jpeg', 0.7));
+        };
+        img.onerror = (error) => reject(error);
+      };
+      reader.onerror = (error) => reject(error);
+    });
+  };
+
   const saveTrackingUpdate = async () => {
     if (!adminTrackingCode.trim() || !adminTrackingStatus.trim()) {
       alert("Preencha o código e o status.");
@@ -636,33 +690,43 @@ function AppContent() {
       const docRef = doc(db, 'tracking', code);
       const docSnap = await getDoc(docRef);
       
+      let imageUrl = '';
+      if (adminTrackingImage) {
+        imageUrl = await compressImage(adminTrackingImage);
+      }
+      
       const newHistoryEvent = {
         status: adminTrackingStatus,
         location: adminTrackingLocation,
         date: adminTrackingDate || new Date().toLocaleDateString('pt-BR'),
         time: new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
       };
+      
+      const updateData: any = {
+        status: adminTrackingStatus,
+        location: adminTrackingLocation,
+        date: adminTrackingDate || new Date().toLocaleDateString('pt-BR'),
+      };
+      
+      if (imageUrl) updateData.imageUrl = imageUrl;
+      if (adminTrackingWeight) updateData.weight = adminTrackingWeight;
+      if (adminTrackingCBM) updateData.cbm = adminTrackingCBM;
 
       if (docSnap.exists()) {
-        await updateDoc(docRef, {
-          status: adminTrackingStatus,
-          location: adminTrackingLocation,
-          date: adminTrackingDate || new Date().toLocaleDateString('pt-BR'),
-          history: arrayUnion(newHistoryEvent)
-        });
+        updateData.history = arrayUnion(newHistoryEvent);
+        await updateDoc(docRef, updateData);
       } else {
-        await setDoc(docRef, {
-          status: adminTrackingStatus,
-          location: adminTrackingLocation,
-          date: adminTrackingDate || new Date().toLocaleDateString('pt-BR'),
-          history: [newHistoryEvent]
-        });
+        updateData.history = [newHistoryEvent];
+        await setDoc(docRef, updateData);
       }
       alert("Rastreamento atualizado com sucesso!");
       setShowAdminTracking(false);
       setAdminTrackingCode('');
       setAdminTrackingLocation('');
       setAdminTrackingStatus('');
+      setAdminTrackingWeight('');
+      setAdminTrackingCBM('');
+      setAdminTrackingImage(null);
     } catch (e: any) {
       console.error(e);
       alert("Erro: " + e.message + " (Pode ser falta de permissões de admin)");
@@ -687,7 +751,10 @@ function AppContent() {
           status: data.status,
           location: data.location,
           date: data.date,
-          history: data.history || []
+          history: data.history || [],
+          imageUrl: data.imageUrl,
+          weight: data.weight,
+          cbm: data.cbm
         });
       } else {
         setTrackingError('Cargo com este código não encontrado.');
@@ -715,6 +782,65 @@ function AppContent() {
       pesoUnitario: 0
     }
   ]);
+
+  // --- PWA & Connectivity Listeners ---
+  useEffect(() => {
+    // Detect standalone mode
+    const checkStandalone = () => {
+      const isWindowStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone === true;
+      setIsStandalone(isWindowStandalone);
+    };
+    checkStandalone();
+
+    // Detect iOS
+    const userAgent = window.navigator.userAgent.toLowerCase();
+    const isIosDevice = /iphone|ipad|ipod/.test(userAgent);
+    setIsIOS(isIosDevice);
+
+    // Online / Offline listeners
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+
+    // PWA Install prompt listener
+    const handleBeforeInstallPrompt = (e: Event) => {
+      e.preventDefault();
+      setDeferredPrompt(e);
+      setIsInstallable(true);
+    };
+
+    const handleAppInstalled = () => {
+      setIsInstallable(false);
+      setDeferredPrompt(null);
+      setShowInstallModal(false);
+      console.log('PrimeWay PWA foi instalado com sucesso!');
+    };
+
+    window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+    window.addEventListener('appinstalled', handleAppInstalled);
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      window.removeEventListener('appinstalled', handleAppInstalled);
+    };
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (deferredPrompt) {
+      deferredPrompt.prompt();
+      const { outcome } = await deferredPrompt.userChoice;
+      if (outcome === 'accepted') {
+        setIsInstallable(false);
+        setDeferredPrompt(null);
+        setShowInstallModal(false);
+      }
+    } else {
+      setShowInstallModal(true);
+    }
+  };
 
   // --- Firebase Auth ---
 
@@ -1747,17 +1873,42 @@ function AppContent() {
 
   return (
     <div className="min-h-screen flex flex-col">
+      {/* Offline Status Warning Bar */}
+      {!isOnline && (
+        <div className="bg-amber-500 text-slate-950 text-xs font-bold py-2.5 px-4 text-center sticky top-0 z-50 flex items-center justify-center gap-2 shadow-md">
+          <WifiOff size={16} className="animate-pulse" />
+          <span>Modo Offline Ativo: Pode utilizar as calculadoras e ver conteúdos em cache. A sincronização em nuvem retomará assim que reconectar à internet.</span>
+        </div>
+      )}
+
       {/* WhatsApp Button */}
       <a 
         href="https://wa.me/258842914655?text=Olá,%20gostaria%20de%20saber%20mais%20sobre%20os%20serviços%20da%20PrimeWay!" 
         target="_blank" 
         rel="noreferrer"
         className="fixed bottom-8 right-8 bg-[#25D366] text-white w-14 h-14 rounded-full flex items-center justify-center shadow-2xl z-50 hover:scale-110 transition-transform no-print"
+        title="Fale connosco no WhatsApp"
       >
         <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" fill="currentColor" viewBox="0 0 16 16">
           <path d="M13.601 2.326A7.854 7.854 0 0 0 7.994 0C3.627 0 .068 3.558.064 7.926c0 1.399.366 2.76 1.057 3.965L0 16l4.204-1.102a7.933 7.933 0 0 0 3.79.965h.004c4.368 0 7.926-3.558 7.93-7.93A7.898 7.898 0 0 0 13.6 2.326zM7.994 14.521a6.573 6.573 0 0 1-3.356-.92l-.24-.144-2.494.654.666-2.433-.156-.251a6.56 6.56 0 0 1-1.007-3.505c0-3.626 2.957-6.584 6.591-6.584a6.56 6.56 0 0 1 4.66 1.931 6.557 6.557 0 0 1 1.928 4.66c-.004 3.639-2.961 6.592-6.592 6.592zm3.615-4.934c-.197-.099-1.17-.578-1.353-.646-.182-.065-.315-.099-.445.099-.133.197-.513.646-.627.775-.114.133-.232.148-.43.05-.197-.1-.836-.308-1.592-.985-.59-.525-.985-1.175-1.103-1.372-.114-.198-.011-.304.088-.403.087-.088.197-.232.296-.346.1-.114.133-.198.198-.33.065-.134.034-.248-.015-.347-.05-.099-.445-1.076-.612-1.47-.16-.389-.323-.335-.445-.34-.114-.004-.247-.007-.38-.007a.729.729 0 0 0-.529.247c-.182.198-.691.677-.691 1.654 0 .977.71 1.916.81 2.049.098.133 1.394 2.132 3.383 2.992.47.205.84.326 1.129.418.475.152.904.129 1.246.08.38-.058 1.171-.48 1.338-.943.164-.464.164-.86.114-.943-.049-.084-.182-.133-.38-.232z"/>
         </svg>
       </a>
+
+      {/* Floating PWA Install Banner Button (if not already opened in standalone mode) */}
+      {!isStandalone && (
+        <div className="fixed bottom-6 left-6 z-40 no-print">
+          <button 
+            onClick={handleInstallClick}
+            className="flex items-center gap-2.5 bg-slate-900/95 hover:bg-slate-900 text-white px-4 py-2.5 rounded-full shadow-2xl border border-slate-700/80 backdrop-blur-md text-xs font-bold transition-all hover:scale-105 hover:border-corp-blue-light"
+          >
+            <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-sky-400 to-blue-600 flex items-center justify-center text-white shrink-0">
+              <DownloadCloud size={13} />
+            </div>
+            <span className="hidden sm:inline">Instalar App PrimeWay</span>
+            <span className="sm:hidden">App Móvel</span>
+          </button>
+        </div>
+      )}
 
       {/* Topbar */}
       <div className="bg-corp-blue text-white py-2 px-6 hidden md:block no-print text-[10px] font-medium tracking-widest uppercase">
@@ -1766,7 +1917,14 @@ function AppContent() {
             <span className="flex items-center gap-1.5"><Phone size={12} className="text-corp-orange" /> +258 84 291 4655</span>
             <span className="flex items-center gap-1.5"><Mail size={12} className="text-corp-orange" /> comercial@primewayinvest.com</span>
           </div>
-          <div className="flex gap-4">
+          <div className="flex items-center gap-6">
+            <button 
+              onClick={handleInstallClick}
+              className="flex items-center gap-1.5 text-sky-300 hover:text-white transition-colors cursor-pointer"
+            >
+              <Smartphone size={12} className="text-sky-300" />
+              <span>Instalar App (PWA)</span>
+            </button>
             <span className="flex items-center gap-1.5"><MapPin size={12} className="text-corp-orange" /> Maputo, Moçambique</span>
           </div>
         </div>
@@ -1784,7 +1942,7 @@ function AppContent() {
             />
           </button>
           
-          <div className="hidden md:flex items-center gap-10">
+          <div className="hidden md:flex items-center gap-8">
             {['Início', 'A Empresa', 'Serviços', 'Calculadora Proforma', 'Cursos', 'Rastreio'].map((item) => {
               const targetId = item === 'Calculadora Proforma' ? 'simulador' : item.toLowerCase().replace(' ', '-');
               const isCursosTab = item === 'Cursos';
@@ -1801,6 +1959,16 @@ function AppContent() {
                 </button>
               );
             })}
+
+            {/* Install PWA Button in Navbar */}
+            <button 
+              onClick={handleInstallClick}
+              className="flex items-center gap-1.5 text-xs font-bold text-corp-blue bg-blue-50/80 hover:bg-blue-100/80 px-3 py-2 rounded-lg transition-colors"
+              title="Instalar PrimeWay no Computador ou Telemóvel"
+            >
+              <Smartphone size={15} className="text-corp-blue" />
+              <span>Instalar App</span>
+            </button>
             
             {isAuthReady && (
               user ? (
@@ -1842,9 +2010,17 @@ function AppContent() {
             </button>
           </div>
 
-          <button className="md:hidden text-corp-blue" onClick={() => setIsMenuOpen(!isMenuOpen)}>
-            {isMenuOpen ? <X size={24} /> : <Menu size={24} />}
-          </button>
+          <div className="md:hidden flex items-center gap-3">
+            <button 
+              onClick={handleInstallClick}
+              className="flex items-center gap-1 text-[11px] font-bold text-corp-blue bg-blue-50 px-2.5 py-1.5 rounded-lg"
+            >
+              <Smartphone size={14} /> App
+            </button>
+            <button className="text-corp-blue p-1" onClick={() => setIsMenuOpen(!isMenuOpen)}>
+              {isMenuOpen ? <X size={24} /> : <Menu size={24} />}
+            </button>
+          </div>
         </div>
 
         {/* Mobile Menu */}
@@ -1872,6 +2048,20 @@ function AppContent() {
                   </button>
                 );
               })}
+
+              <button 
+                onClick={() => {
+                  setIsMenuOpen(false);
+                  handleInstallClick();
+                }}
+                className="flex items-center justify-between text-left text-sm font-bold text-corp-blue bg-blue-50/70 p-3 rounded-xl uppercase tracking-wider"
+              >
+                <span className="flex items-center gap-2">
+                  <Smartphone size={18} className="text-corp-blue" />
+                  Instalar App PrimeWay
+                </span>
+                <span className="text-[10px] bg-corp-blue text-white px-2 py-0.5 rounded-full font-sans">PWA</span>
+              </button>
 
               {isAuthReady && (
                 user ? (
@@ -2152,6 +2342,37 @@ function AppContent() {
                     <p className="font-bold text-slate-900">{trackingResult.date}</p>
                   </div>
                 </div>
+
+                {(trackingResult.weight || trackingResult.cbm || trackingResult.imageUrl) && (
+                  <div className="mb-8 grid grid-cols-1 md:grid-cols-2 gap-6 bg-white p-6 rounded-xl border border-slate-100 shadow-sm">
+                    {trackingResult.imageUrl && (
+                      <div className="md:col-span-1 flex flex-col justify-center border-r border-slate-100 pr-0 md:pr-6">
+                        <h4 className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold mb-3">Foto da Encomenda</h4>
+                        <img 
+                          src={trackingResult.imageUrl} 
+                          alt="Encomenda" 
+                          className="w-full h-auto max-h-[300px] object-cover rounded-lg shadow-sm border border-slate-100"
+                          referrerPolicy="no-referrer"
+                        />
+                      </div>
+                    )}
+                    <div className="md:col-span-1 flex flex-col justify-center space-y-4">
+                      <h4 className="text-[10px] uppercase tracking-widest text-slate-500 font-semibold mb-1">Detalhes da Carga</h4>
+                      {trackingResult.weight && (
+                        <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+                          <span className="text-sm font-semibold text-slate-500">Peso Total</span>
+                          <span className="font-bold text-slate-900">{trackingResult.weight} KG</span>
+                        </div>
+                      )}
+                      {trackingResult.cbm && (
+                        <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+                          <span className="text-sm font-semibold text-slate-500">Volume</span>
+                          <span className="font-bold text-slate-900">{trackingResult.cbm} CBM</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 <div className="relative pl-6 space-y-8 before:absolute before:inset-0 before:ml-[11px] before:-translate-x-px md:before:mx-auto md:before:translate-x-0 before:h-full before:w-0.5 before:bg-gradient-to-b before:from-transparent before:via-slate-200 before:to-transparent">
                   {trackingResult.history.map((event: any, index: number) => (
@@ -4111,6 +4332,14 @@ function AppContent() {
                   Verificação de Fornecedores
                 </button>
               </li>
+              <li>
+                <button 
+                  onClick={handleInstallClick}
+                  className="hover:text-white transition-colors text-left flex items-center gap-2 text-sky-400 font-semibold"
+                >
+                  <Smartphone size={15} /> Instalar App no Telemóvel
+                </button>
+              </li>
             </ul>
           </div>
         </div>
@@ -4425,6 +4654,42 @@ function AppContent() {
                     onChange={(e) => setAdminTrackingDate(e.target.value)}
                     className="input-modern !py-2.5 !px-3"
                     placeholder="Ex: 30/04/2026"
+                  />
+                </div>
+                <div className="flex gap-4">
+                  <div className="flex-1">
+                    <label className="label-corp">Peso (KG) - Opcional</label>
+                    <input 
+                      type="text" 
+                      value={adminTrackingWeight} 
+                      onChange={(e) => setAdminTrackingWeight(e.target.value)}
+                      className="input-modern !py-2.5 !px-3"
+                      placeholder="Ex: 3.00"
+                    />
+                  </div>
+                  <div className="flex-1">
+                    <label className="label-corp">Volume (CBM) - Opcional</label>
+                    <input 
+                      type="text" 
+                      value={adminTrackingCBM} 
+                      onChange={(e) => setAdminTrackingCBM(e.target.value)}
+                      className="input-modern !py-2.5 !px-3"
+                      placeholder="Ex: 0.01"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="label-corp">Foto da Encomenda (Opcional)</label>
+                  <input 
+                    type="file" 
+                    accept="image/*"
+                    onChange={(e) => setAdminTrackingImage(e.target.files?.[0] || null)}
+                    className="block w-full text-sm text-slate-500
+                      file:mr-4 file:py-2 file:px-4
+                      file:rounded-full file:border-0
+                      file:text-xs file:font-semibold
+                      file:bg-corp-blue/10 file:text-corp-blue
+                      hover:file:bg-corp-blue/20 cursor-pointer"
                   />
                 </div>
                 <div className="pt-4 flex gap-3">
@@ -4876,6 +5141,109 @@ function AppContent() {
                     )}
                   </motion.div>
                 )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* PWA App Installation Modal */}
+      <AnimatePresence>
+        {showInstallModal && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-[110] flex items-center justify-center p-4 sm:p-6 bg-slate-900/80 backdrop-blur-sm no-print"
+          >
+            <motion.div 
+              initial={{ scale: 0.92, y: 20 }}
+              animate={{ scale: 1, y: 0 }}
+              className="bg-white rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl relative max-h-[90vh] overflow-y-auto"
+            >
+              <button 
+                onClick={() => setShowInstallModal(false)}
+                className="absolute top-5 right-5 text-slate-400 hover:text-slate-700 bg-slate-100 hover:bg-slate-200 w-8 h-8 rounded-full flex items-center justify-center transition-colors"
+              >
+                <X size={18} />
+              </button>
+
+              <div className="flex items-center gap-4 mb-6">
+                <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-[#1A284F] to-[#2D4C8C] flex items-center justify-center text-white shadow-lg shrink-0">
+                  <Smartphone size={28} className="text-sky-300" />
+                </div>
+                <div>
+                  <h3 className="font-heading font-bold text-xl text-slate-900 uppercase tracking-tight">
+                    Instalar PrimeWay App
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium">Aplicativo Web Progressivo (PWA)</p>
+                </div>
+              </div>
+
+              <div className="space-y-4 mb-6 text-sm text-slate-600">
+                <div className="bg-blue-50/70 border border-blue-100 rounded-2xl p-4 space-y-2">
+                  <h4 className="font-bold text-corp-blue text-xs uppercase tracking-wider flex items-center gap-2">
+                    <Sparkles size={14} className="text-corp-orange" />
+                    Vantagens do Aplicativo
+                  </h4>
+                  <ul className="text-xs text-slate-700 space-y-1.5 list-disc list-inside">
+                    <li>Acesso direto no seu telemóvel sem precisar abrir o navegador</li>
+                    <li>Acesso offline básico para simulações e dados em cache</li>
+                    <li>Rastreamento de cargas e cálculos com máxima rapidez</li>
+                    <li>Economia de dados móveis e carregamento instantâneo</li>
+                  </ul>
+                </div>
+
+                {deferredPrompt ? (
+                  <div className="pt-2 text-center space-y-3">
+                    <p className="text-xs text-slate-600">
+                      O seu navegador suporta a instalação direta em 1 clique:
+                    </p>
+                    <button 
+                      onClick={handleInstallClick}
+                      className="w-full btn-modern-primary !py-3.5 flex items-center justify-center gap-2 text-sm"
+                    >
+                      <DownloadCloud size={18} />
+                      Instalar Aplicativo Agora
+                    </button>
+                  </div>
+                ) : isIOS ? (
+                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
+                    <h4 className="font-bold text-slate-900 text-xs uppercase tracking-wider flex items-center gap-2">
+                      <Share2 size={15} className="text-corp-blue" />
+                      Como instalar no iPhone / iPad (Safari):
+                    </h4>
+                    <ol className="text-xs text-slate-600 space-y-2.5 list-decimal list-inside font-medium">
+                      <li>Toque no botão <strong>Partilhar</strong> na barra inferior do Safari (ícone de quadrado com seta para cima <span className="inline-block px-1.5 py-0.5 bg-slate-200 rounded text-slate-800 text-[11px]">⎋</span>).</li>
+                      <li>Deslize o menu para baixo e toque em <strong>"Adicionar ao Ecrã Principal"</strong> (Add to Home Screen <span className="inline-block px-1.5 py-0.5 bg-slate-200 rounded text-slate-800 text-[11px]">➕</span>).</li>
+                      <li>Toque em <strong>"Adicionar"</strong> no canto superior direito.</li>
+                    </ol>
+                  </div>
+                ) : (
+                  <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
+                    <h4 className="font-bold text-slate-900 text-xs uppercase tracking-wider flex items-center gap-2">
+                      <Smartphone size={15} className="text-corp-blue" />
+                      Como instalar no seu dispositivo:
+                    </h4>
+                    <div className="space-y-3 text-xs text-slate-600 font-medium">
+                      <p>
+                        <strong>Android (Chrome / Samsung):</strong> Toque no menu do navegador (<span className="font-bold">⋮</span>) no canto superior e selecione <strong>"Instalar aplicativo"</strong> ou <strong>"Adicionar ao ecrã inicial"</strong>.
+                      </p>
+                      <p>
+                        <strong>Computador (Chrome / Edge):</strong> Clique no ícone de instalação (<DownloadCloud size={12} className="inline mx-1" />) no lado direito da barra de endereço ou no menu de configurações.
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <button 
+                  onClick={() => setShowInstallModal(false)}
+                  className="w-full sm:w-auto px-6 py-2.5 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-100 font-semibold text-xs transition-colors"
+                >
+                  Fechar
+                </button>
               </div>
             </motion.div>
           </motion.div>
