@@ -5169,9 +5169,11 @@ function AppContent() {
               </button>
 
               <div className="flex items-center gap-4 mb-6">
-                <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-[#1A284F] to-[#2D4C8C] flex items-center justify-center text-white shadow-lg shrink-0">
-                  <Smartphone size={28} className="text-sky-300" />
-                </div>
+                <img 
+                  src="/IMG-20260215-WA0003.jpg" 
+                  alt="PrimeWay Logo" 
+                  className="w-14 h-14 rounded-2xl object-contain bg-[#1A284F] p-1.5 shadow-md shrink-0 border border-slate-200"
+                />
                 <div>
                   <h3 className="font-heading font-bold text-xl text-slate-900 uppercase tracking-tight">
                     Instalar PrimeWay App
