@@ -74,6 +74,7 @@ import { auth, db } from './firebase';
 import { toJpeg } from 'html-to-image';
 import { jsPDF } from 'jspdf';
 import { logoBase64 } from './logoBase64';
+import { SourcingModule } from './sourcing/SourcingModule';
 
 // --- Error Handling ---
 
@@ -414,12 +415,12 @@ interface Lesson {
 
 function AppContent() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [activeView, setActiveView] = useState<'landing' | 'cursos'>('landing');
+  const [activeView, setActiveView] = useState<'landing' | 'cursos' | 'sourcing'>('landing');
 
-  const navigateTo = (view: 'landing' | 'cursos', id?: string) => {
+  const navigateTo = (view: 'landing' | 'cursos' | 'sourcing', id?: string) => {
     setActiveView(view);
     setIsMenuOpen(false);
-    if (view === 'cursos') {
+    if (view === 'cursos' || view === 'sourcing') {
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } else if (id) {
       setTimeout(() => {
@@ -782,6 +783,46 @@ function AppContent() {
       pesoUnitario: 0
     }
   ]);
+
+  const handleInjectIntoCalculator = (data: {
+    productName: string;
+    fobPriceUSD: number;
+    quantity: number;
+    weightKg: number;
+    cbm: number;
+    hsCode?: string;
+    freightEstimateUSD?: number;
+    supplierName?: string;
+  }) => {
+    const newProduct: Product = {
+      id: Date.now(),
+      descricao: data.productName + (data.supplierName ? ` [Fornecedor: ${data.supplierName}]` : ''),
+      valorUnitario: data.fobPriceUSD,
+      taxaEnvioFornecedor: 0,
+      quantidade: data.quantity || 1,
+      quantidadeCaixas: '',
+      comprimento: 0,
+      largura: 0,
+      altura: 0,
+      cbmUnitario: data.cbm || '',
+      pesoUnitario: data.weightKg || 0
+    };
+
+    setProdutos(prev => {
+      // If default single empty row exists, replace it
+      if (prev.length === 1 && (!prev[0].descricao || prev[0].descricao.trim() === '')) {
+        return [newProduct];
+      }
+      return [newProduct, ...prev];
+    });
+
+    setMoeda('USD');
+    if (data.freightEstimateUSD && data.freightEstimateUSD > 0) {
+      setFreteInternacional(data.freightEstimateUSD);
+    }
+
+    navigateTo('landing', 'simulador');
+  };
 
   // --- PWA & Connectivity Listeners ---
   useEffect(() => {
@@ -1943,18 +1984,26 @@ function AppContent() {
           </button>
           
           <div className="hidden md:flex items-center gap-8">
-            {['Início', 'A Empresa', 'Serviços', 'Calculadora Proforma', 'Cursos', 'Rastreio'].map((item) => {
-              const targetId = item === 'Calculadora Proforma' ? 'simulador' : item.toLowerCase().replace(' ', '-');
+            {['Início', 'A Empresa', 'Serviços', 'Calculadora Proforma', 'Sourcing China-MZ', 'Cursos', 'Rastreio'].map((item) => {
               const isCursosTab = item === 'Cursos';
-              const isActive = (activeView === 'cursos' && isCursosTab) || (activeView === 'landing' && !isCursosTab && (window.location.hash === `#${targetId}` || (targetId === 'simulador' && window.location.hash === '#simulador')));
+              const isSourcingTab = item === 'Sourcing China-MZ';
+              const targetId = item === 'Calculadora Proforma' ? 'simulador' : item.toLowerCase().replace(' ', '-');
+              const isActive = (activeView === 'sourcing' && isSourcingTab) ||
+                               (activeView === 'cursos' && isCursosTab) || 
+                               (activeView === 'landing' && !isCursosTab && !isSourcingTab && (window.location.hash === `#${targetId}` || (targetId === 'simulador' && window.location.hash === '#simulador')));
               return (
                 <button 
                   key={item} 
-                  onClick={() => navigateTo(isCursosTab ? 'cursos' : 'landing', targetId)}
-                  className={`text-xs font-semibold uppercase tracking-widest transition-colors focus:outline-none ${
+                  onClick={() => {
+                    if (isSourcingTab) navigateTo('sourcing');
+                    else if (isCursosTab) navigateTo('cursos');
+                    else navigateTo('landing', targetId);
+                  }}
+                  className={`text-xs font-semibold uppercase tracking-widest transition-colors focus:outline-none flex items-center gap-1.5 ${
                     isActive ? 'text-corp-orange font-bold scale-102' : 'text-slate-600 hover:text-corp-blue'
                   }`}
                 >
+                  {isSourcingTab && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block animate-pulse" />}
                   {item}
                 </button>
               );
@@ -2032,19 +2081,31 @@ function AppContent() {
               exit={{ opacity: 0, y: -20 }}
               className="absolute top-full left-0 w-full bg-white border-b border-gray-200 p-6 flex flex-col gap-4 md:hidden shadow-xl"
             >
-              {['Início', 'A Empresa', 'Serviços', 'Calculadora Proforma', 'Cursos', 'Rastreio'].map((item) => {
-                const targetId = item === 'Calculadora Proforma' ? 'simulador' : item.toLowerCase().replace(' ', '-');
+              {['Início', 'A Empresa', 'Serviços', 'Calculadora Proforma', 'Sourcing China-MZ', 'Cursos', 'Rastreio'].map((item) => {
                 const isCursosTab = item === 'Cursos';
-                const isActive = (activeView === 'cursos' && isCursosTab) || (activeView === 'landing' && !isCursosTab && window.location.hash === `#${targetId}`);
+                const isSourcingTab = item === 'Sourcing China-MZ';
+                const targetId = item === 'Calculadora Proforma' ? 'simulador' : item.toLowerCase().replace(' ', '-');
+                const isActive = (activeView === 'sourcing' && isSourcingTab) || 
+                                 (activeView === 'cursos' && isCursosTab) || 
+                                 (activeView === 'landing' && !isCursosTab && !isSourcingTab && window.location.hash === `#${targetId}`);
                 return (
                   <button 
                     key={item} 
-                    onClick={() => navigateTo(isCursosTab ? 'cursos' : 'landing', targetId)}
-                    className={`text-left text-sm font-semibold uppercase tracking-widest ${
+                    onClick={() => {
+                      if (isSourcingTab) navigateTo('sourcing');
+                      else if (isCursosTab) navigateTo('cursos');
+                      else navigateTo('landing', targetId);
+                    }}
+                    className={`text-left text-sm font-semibold uppercase tracking-widest flex items-center justify-between ${
                       isActive ? 'text-corp-orange font-bold' : 'text-corp-blue hover:text-corp-blue-light'
                     }`}
                   >
-                    {item}
+                    <span>{item}</span>
+                    {isSourcingTab && (
+                      <span className="text-[9px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold">
+                        China ➔ MZ
+                      </span>
+                    )}
                   </button>
                 );
               })}
@@ -2116,7 +2177,12 @@ function AppContent() {
         </AnimatePresence>
       </nav>
 
-      {activeView === 'landing' ? (
+      {activeView === 'sourcing' ? (
+        <SourcingModule
+          onBackToCalculator={() => navigateTo('landing', 'simulador')}
+          onInjectIntoCalculator={handleInjectIntoCalculator}
+        />
+      ) : activeView === 'landing' ? (
         <>
           {/* Hero Section */}
           <header id="inicio" className="relative bg-slate-900 text-white min-h-[60vh] md:min-h-[80vh] flex items-center px-6 overflow-hidden no-print">
@@ -2403,6 +2469,33 @@ function AppContent() {
           <span className="text-corp-orange font-bold text-xs uppercase tracking-[0.3em] block">Cotação & Fatura Oficial</span>
           <h2 className="font-heading font-bold text-3xl md:text-5xl text-slate-900 uppercase tracking-tighter">Calculadora Proforma</h2>
           <p className="text-slate-600 font-medium text-sm md:text-base max-w-2xl mx-auto">Calcule os custos de transporte, impostos alfandegários e emita a sua Fatura Proforma em PDF instantaneamente.</p>
+        </div>
+
+        {/* Sourcing Bridge Banner */}
+        <div className="bg-gradient-to-r from-[#1A284F] via-[#223565] to-[#1A284F] p-4 sm:p-5 rounded-2xl text-white shadow-md flex flex-col sm:flex-row items-center justify-between gap-4 border border-blue-900/50 max-w-5xl mx-auto">
+          <div className="flex items-center gap-3.5 text-left">
+            <div className="w-11 h-11 rounded-xl bg-corp-orange text-white flex items-center justify-center font-black text-xs shadow shrink-0">
+              CN ➔ MZ
+            </div>
+            <div>
+              <div className="font-bold text-sm text-white flex items-center gap-2">
+                Módulo Interno de Sourcing de Produtos da China
+                <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded font-bold border border-emerald-500/30">
+                  Integrado
+                </span>
+              </div>
+              <p className="text-xs text-slate-300 mt-0.5">
+                Fornecedores chineses (1688, Alibaba, Cantão), catálogos PDF, cotações e envio automático para esta calculadora.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => navigateTo('sourcing')}
+            className="btn-modern-primary !py-2.5 px-4 text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 whitespace-nowrap cursor-pointer shadow self-stretch sm:self-auto justify-center"
+          >
+            Abrir Sourcing <ChevronRight size={14} />
+          </button>
         </div>
 
         {/* Mode Selector Tabs */}
