@@ -107,8 +107,16 @@ interface FirestoreErrorInfo {
 }
 
 function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errorMessage = error instanceof Error ? error.message : String(error);
+  
+  // Do not throw or log as a hard error for offline issues
+  if (errorMessage.includes('client is offline') || errorMessage.includes('offline') || errorMessage.includes('unavailable')) {
+    console.warn(`Firestore is currently offline. Skipping operation: ${operationType} on path: ${path}`);
+    return;
+  }
+
   const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
+    error: errorMessage,
     authInfo: {
       userId: auth.currentUser?.uid,
       email: auth.currentUser?.email,
@@ -901,7 +909,7 @@ function AppContent() {
         await getDocFromServer(doc(db, 'test', 'connection'));
       } catch (error) {
         if(error instanceof Error && error.message.includes('the client is offline')) {
-          console.error("Please check your Firebase configuration. ");
+          console.warn("Firebase is operating in offline mode.");
         }
       }
     }
@@ -917,7 +925,11 @@ function AppContent() {
           setLessons(docSnap.data().lessons);
         }
       } catch(e) {
-        console.error("Erro ao carregar cursos:", e);
+        if (e instanceof Error && (e.message.includes('client is offline') || e.message.includes('unavailable'))) {
+           console.warn("Erro ao carregar cursos: Firestore is offline.");
+        } else {
+           console.error("Erro ao carregar cursos:", e);
+        }
         handleFirestoreError(e, OperationType.GET, 'settings/courses');
       }
     }
@@ -932,7 +944,11 @@ function AppContent() {
       setShowAdminCourse(false);
       alert('Cursos salvos com sucesso!');
     } catch(e) {
-      console.error(e);
+      if (e instanceof Error && (e.message.includes('client is offline') || e.message.includes('unavailable'))) {
+         console.warn("Erro ao salvar cursos: Firestore is offline.");
+      } else {
+         console.error(e);
+      }
       handleFirestoreError(e, OperationType.WRITE, 'settings/courses');
     } finally {
       setIsSavingCourse(false);

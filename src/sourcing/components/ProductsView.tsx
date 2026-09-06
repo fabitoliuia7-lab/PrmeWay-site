@@ -146,12 +146,22 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
     priceUnit: PriceUnit;
     moq: number | '';
     supplierId: string;
+    leadTimeDays: number;
+    incoterm: IncotermType;
+    loadingPort: string;
+    paymentTerms: string;
+    contractUrl: string;
   }>({
     price: 0,
     currency: 'USD',
     priceUnit: 'unidade',
     moq: 1,
-    supplierId: ''
+    supplierId: '',
+    leadTimeDays: 15,
+    incoterm: 'FOB',
+    loadingPort: 'Guangzhou',
+    paymentTerms: '',
+    contractUrl: ''
   });
 
   // Modal State: Manage Suppliers of a Product
@@ -388,7 +398,12 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
       currency: prod.currency ?? bestRel?.currency ?? 'USD',
       priceUnit: prod.priceUnit ?? bestRel?.priceUnit ?? 'unidade',
       moq: prod.moq ?? bestRel?.moq ?? 1,
-      supplierId: prod.defaultSupplierId ?? bestRel?.supplierId ?? (suppliers[0]?.id || '')
+      supplierId: prod.defaultSupplierId ?? bestRel?.supplierId ?? (suppliers[0]?.id || ''),
+      leadTimeDays: bestRel?.leadTimeDays ?? 15,
+      incoterm: bestRel?.incoterm ?? 'FOB',
+      loadingPort: bestRel?.loadingPort ?? defaultPorts[0] ?? 'Guangzhou',
+      paymentTerms: bestRel?.paymentTerms ?? '',
+      contractUrl: bestRel?.contractUrl ?? ''
     });
     setIsQuickPriceModalOpen(true);
   };
@@ -421,7 +436,12 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
           indicativePrice: priceNum,
           currency: quickPriceForm.currency,
           priceUnit: quickPriceForm.priceUnit,
-          moq: moqNum
+          moq: moqNum,
+          leadTimeDays: quickPriceForm.leadTimeDays,
+          incoterm: quickPriceForm.incoterm,
+          loadingPort: quickPriceForm.loadingPort,
+          paymentTerms: quickPriceForm.paymentTerms,
+          contractUrl: quickPriceForm.contractUrl
         });
       } else {
         const nextRelId = generateNextId('REL', relations);
@@ -435,9 +455,11 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
           priceUnit: quickPriceForm.priceUnit,
           moq: moqNum,
           monthlyCapacity: '',
-          leadTimeDays: 15,
-          incoterm: 'FOB',
-          loadingPort: defaultPorts[0] || 'Guangzhou',
+          leadTimeDays: quickPriceForm.leadTimeDays,
+          incoterm: quickPriceForm.incoterm,
+          loadingPort: quickPriceForm.loadingPort,
+          paymentTerms: quickPriceForm.paymentTerms,
+          contractUrl: quickPriceForm.contractUrl,
           customizationAvailable: true,
           sampleAvailable: true,
           sampleCost: 0,
@@ -534,6 +556,8 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
         leadTimeDays: Number(relationForm.leadTimeDays) || 15,
         incoterm: (relationForm.incoterm as IncotermType) || 'FOB',
         loadingPort: relationForm.loadingPort || 'Guangzhou',
+        paymentTerms: relationForm.paymentTerms || '',
+        contractUrl: relationForm.contractUrl || '',
         customizationAvailable: !!relationForm.customizationAvailable,
         sampleAvailable: !!relationForm.sampleAvailable,
         sampleCost: Number(relationForm.sampleCost) || 0,
@@ -571,6 +595,8 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
       leadTimeDays: Number(relationForm.leadTimeDays) || 15,
       incoterm: (relationForm.incoterm as IncotermType) || 'FOB',
       loadingPort: relationForm.loadingPort || 'Guangzhou',
+      paymentTerms: relationForm.paymentTerms || '',
+      contractUrl: relationForm.contractUrl || '',
       customizationAvailable: !!relationForm.customizationAvailable,
       sampleAvailable: !!relationForm.sampleAvailable,
       sampleCost: Number(relationForm.sampleCost) || 0,
@@ -1605,6 +1631,29 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                 </div>
               </div>
 
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Condições de Pagamento</label>
+                  <input
+                    type="text"
+                    value={relationForm.paymentTerms || ''}
+                    onChange={e => setRelationForm({ ...relationForm, paymentTerms: e.target.value })}
+                    placeholder="Ex: 30% T/T Adiantado"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">Contrato / Proforma (URL)</label>
+                  <input
+                    type="url"
+                    value={relationForm.contractUrl || ''}
+                    onChange={e => setRelationForm({ ...relationForm, contractUrl: e.target.value })}
+                    placeholder="Link do Anexo"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs"
+                  />
+                </div>
+              </div>
+
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">Condições & Observações Comerciais</label>
                 <input
@@ -1748,6 +1797,67 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                     </option>
                   ))}
                 </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 border-t border-slate-100 pt-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Prazo de Produção (Dias)</label>
+                  <input
+                    type="number"
+                    value={quickPriceForm.leadTimeDays || ''}
+                    onChange={e => setQuickPriceForm({ ...quickPriceForm, leadTimeDays: parseInt(e.target.value, 10) || 15 })}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Incoterm</label>
+                  <select
+                    value={quickPriceForm.incoterm}
+                    onChange={e => setQuickPriceForm({ ...quickPriceForm, incoterm: e.target.value as IncotermType })}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white font-semibold"
+                  >
+                    <option value="FOB">FOB</option>
+                    <option value="EXW">EXW</option>
+                    <option value="CIF">CIF</option>
+                    <option value="DDP">DDP</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Porto Exportação</label>
+                  <select
+                    value={quickPriceForm.loadingPort}
+                    onChange={e => setQuickPriceForm({ ...quickPriceForm, loadingPort: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white"
+                  >
+                    {defaultPorts.map(p => (
+                      <option key={p} value={p}>{p}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Pagamento / Termos</label>
+                  <input
+                    type="text"
+                    value={quickPriceForm.paymentTerms}
+                    onChange={e => setQuickPriceForm({ ...quickPriceForm, paymentTerms: e.target.value })}
+                    placeholder="Ex: 30% Adiantado"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">URL do Contrato / Anexo</label>
+                <input
+                  type="url"
+                  value={quickPriceForm.contractUrl}
+                  onChange={e => setQuickPriceForm({ ...quickPriceForm, contractUrl: e.target.value })}
+                  placeholder="Link para o documento"
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs"
+                />
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">

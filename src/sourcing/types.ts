@@ -81,6 +81,8 @@ export interface ProductSupplierRelation {
   leadTimeDays: number;
   incoterm: IncotermType;
   loadingPort: string;
+  paymentTerms?: string;
+  contractUrl?: string;
   customizationAvailable: boolean;
   sampleAvailable: boolean;
   sampleCost?: number;
