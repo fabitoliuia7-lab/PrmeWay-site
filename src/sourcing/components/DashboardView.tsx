@@ -13,7 +13,8 @@ import {
   Scale,
   Award,
   Globe2,
-  Send
+  Send,
+  Edit3
 } from 'lucide-react';
 import { 
   Supplier, 
