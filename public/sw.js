@@ -44,8 +44,13 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // Bypass Firebase API / Google API / Auth / Firestore calls to avoid stale auth data
+  // Bypass dev tooling, modules, and Firebase API / Google API calls
   if (
+    url.pathname.includes('/node_modules/') ||
+    url.pathname.includes('/@vite/') ||
+    url.pathname.includes('/@fs/') ||
+    url.pathname.includes('/src/') ||
+    url.search.includes('v=') ||
     url.hostname.includes('firestore.googleapis.com') ||
     url.hostname.includes('identitytoolkit.googleapis.com') ||
     url.hostname.includes('firebaseio.com') ||

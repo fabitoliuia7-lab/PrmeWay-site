@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { 
   Package, 
   Plus, 
@@ -18,7 +18,11 @@ import {
   Layers, 
   Upload, 
   Scale, 
-  Maximize2 
+  Maximize2,
+  Image as ImageIcon,
+  CheckCircle2,
+  FileImage,
+  Sparkles
 } from 'lucide-react';
 import { 
   ProductItem, 
@@ -30,6 +34,50 @@ import {
   ProductStatus 
 } from '../types';
 import { generateNextId } from '../idGenerator';
+
+// Canvas-based image compressor for high performance & instant local rendering
+const compressImageFile = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const MAX_WIDTH = 900;
+        const MAX_HEIGHT = 900;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > MAX_WIDTH) {
+            height = Math.round((height * MAX_WIDTH) / width);
+            width = MAX_WIDTH;
+          }
+        } else {
+          if (height > MAX_HEIGHT) {
+            width = Math.round((width * MAX_HEIGHT) / height);
+            height = MAX_HEIGHT;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) {
+          resolve(event.target?.result as string);
+          return;
+        }
+        ctx.drawImage(img, 0, 0, width, height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+        resolve(dataUrl);
+      };
+      img.onerror = () => resolve(event.target?.result as string);
+      img.src = event.target?.result as string;
+    };
+    reader.onerror = (err) => reject(err);
+    reader.readAsDataURL(file);
+  });
+};
 
 interface ProductsViewProps {
   products: ProductItem[];
@@ -61,9 +109,12 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
   const [selectedCategory, setSelectedCategory] = useState('todas');
   const [selectedStatus, setSelectedStatus] = useState('todos');
 
-  // Modal State: Product
+  // Modal State: Full Product
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
   const [editingProduct, setEditingProduct] = useState<ProductItem | null>(null);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const [productForm, setProductForm] = useState<Partial<ProductItem>>({
     namePt: '',
     nameEn: '',
@@ -76,14 +127,38 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
     hsCode: '',
     keywords: [],
     images: [],
-    status: 'ativo'
+    status: 'ativo',
+    indicativePrice: 0,
+    currency: 'USD',
+    priceUnit: 'unidade',
+    moq: 1,
+    defaultSupplierId: ''
   });
   const [keywordInput, setKeywordInput] = useState('');
   const [imageUrlInput, setImageUrlInput] = useState('');
 
+  // Modal State: Quick Price & MOQ Edit
+  const [isQuickPriceModalOpen, setIsQuickPriceModalOpen] = useState(false);
+  const [quickPriceProduct, setQuickPriceProduct] = useState<ProductItem | null>(null);
+  const [quickPriceForm, setQuickPriceForm] = useState<{
+    price: number | '';
+    currency: CurrencyType;
+    priceUnit: PriceUnit;
+    moq: number | '';
+    supplierId: string;
+  }>({
+    price: 0,
+    currency: 'USD',
+    priceUnit: 'unidade',
+    moq: 1,
+    supplierId: ''
+  });
+
   // Modal State: Manage Suppliers of a Product
   const [selectedProductForSuppliers, setSelectedProductForSuppliers] = useState<ProductItem | null>(null);
   const [isRelationModalOpen, setIsRelationModalOpen] = useState(false);
+  const [editingRelationId, setEditingRelationId] = useState<string | null>(null);
+
   const [relationForm, setRelationForm] = useState<Partial<ProductSupplierRelation>>({
     supplierId: '',
     supplierRef: '',
@@ -142,7 +217,12 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
       keywords: [],
       images: [],
       status: 'ativo',
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      indicativePrice: 10,
+      currency: 'USD',
+      priceUnit: 'unidade',
+      moq: 10,
+      defaultSupplierId: suppliers[0]?.id || ''
     });
     setKeywordInput('');
     setImageUrlInput('');
@@ -152,7 +232,22 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
   // Open Edit Product Modal
   const handleOpenEditProduct = (prod: ProductItem) => {
     setEditingProduct(prod);
-    setProductForm({ ...prod });
+    const matchedRelations = relations.filter(r => r.productId === prod.id);
+    const bestRel = matchedRelations.length > 0 
+      ? [...matchedRelations].sort((a, b) => a.indicativePrice - b.indicativePrice)[0] 
+      : undefined;
+
+    const cleanImages = (prod.images || []).filter(img => img && img.trim() !== '' && img !== '/IMG-20260215-WA0003.jpg');
+
+    setProductForm({
+      ...prod,
+      images: cleanImages,
+      indicativePrice: prod.indicativePrice ?? bestRel?.indicativePrice ?? 10,
+      currency: prod.currency ?? bestRel?.currency ?? 'USD',
+      priceUnit: prod.priceUnit ?? bestRel?.priceUnit ?? 'unidade',
+      moq: prod.moq ?? bestRel?.moq ?? 10,
+      defaultSupplierId: prod.defaultSupplierId ?? bestRel?.supplierId ?? (suppliers[0]?.id || '')
+    });
     setKeywordInput('');
     setImageUrlInput('');
     setIsProductModalOpen(true);
@@ -167,7 +262,42 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
     setProductForm({ ...productForm, dimensions: updated });
   };
 
-  // Save Product
+  // Handle Photo Files Upload from Computer / Mobile
+  const handlePhotoFilesUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    setIsUploadingPhoto(true);
+
+    try {
+      const newImages: string[] = [];
+      for (let i = 0; i < files.length; i++) {
+        const compressedBase64 = await compressImageFile(files[i]);
+        if (compressedBase64) {
+          newImages.push(compressedBase64);
+        }
+      }
+
+      if (newImages.length > 0) {
+        setProductForm(prev => ({
+          ...prev,
+          images: [
+            ...(prev.images || []).filter(img => img && img.trim() !== '' && img !== '/IMG-20260215-WA0003.jpg'),
+            ...newImages
+          ]
+        }));
+      }
+    } catch (err) {
+      console.error('Erro ao processar imagem:', err);
+      alert('Não foi possível carregar a imagem. Tente novamente com um arquivo JPG ou PNG.');
+    } finally {
+      setIsUploadingPhoto(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
+
+  // Save Product Submit
   const handleSaveProductSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!productForm.namePt?.trim()) {
@@ -175,11 +305,13 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
       return;
     }
 
+    const cleanImages = (productForm.images || []).filter(img => img && img.trim() !== '' && img !== '/IMG-20260215-WA0003.jpg');
+
     const saved: ProductItem = {
       id: productForm.id || generateNextId('PROD', products),
-      namePt: productForm.namePt,
-      nameEn: productForm.nameEn || '',
-      nameCn: productForm.nameCn || '',
+      namePt: productForm.namePt.trim(),
+      nameEn: productForm.nameEn?.trim() || '',
+      nameCn: productForm.nameCn?.trim() || '',
       category: productForm.category || categories[0] || 'Geral',
       description: productForm.description || '',
       material: productForm.material || '',
@@ -187,26 +319,151 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
       weightKg: Number(productForm.weightKg) || 0,
       hsCode: productForm.hsCode || '',
       keywords: productForm.keywords || [],
-      images: productForm.images && productForm.images.length > 0 ? productForm.images : ['/IMG-20260215-WA0003.jpg'],
+      // Pure product photos only - never company logo!
+      images: cleanImages,
       status: (productForm.status as ProductStatus) || 'ativo',
-      createdAt: productForm.createdAt || new Date().toISOString()
+      createdAt: productForm.createdAt || new Date().toISOString(),
+      indicativePrice: productForm.indicativePrice !== undefined && !isNaN(Number(productForm.indicativePrice))
+        ? Number(productForm.indicativePrice) 
+        : undefined,
+      currency: (productForm.currency as CurrencyType) || 'USD',
+      priceUnit: (productForm.priceUnit as PriceUnit) || 'unidade',
+      moq: productForm.moq !== undefined && !isNaN(Number(productForm.moq))
+        ? Number(productForm.moq) 
+        : 1,
+      defaultSupplierId: productForm.defaultSupplierId || undefined
     };
 
     onSaveProduct(saved);
+
+    // Keep relation synchronized if supplier is selected and price provided
+    if (productForm.defaultSupplierId && saved.indicativePrice !== undefined) {
+      const existingRel = relations.find(r => r.productId === saved.id && r.supplierId === productForm.defaultSupplierId);
+      if (existingRel) {
+        onSaveRelation({
+          ...existingRel,
+          indicativePrice: saved.indicativePrice,
+          currency: saved.currency || 'USD',
+          priceUnit: saved.priceUnit || 'unidade',
+          moq: saved.moq || 1
+        });
+      } else {
+        const nextRelId = generateNextId('REL', relations);
+        onSaveRelation({
+          id: nextRelId,
+          productId: saved.id,
+          supplierId: productForm.defaultSupplierId,
+          supplierRef: '',
+          indicativePrice: saved.indicativePrice,
+          currency: saved.currency || 'USD',
+          priceUnit: saved.priceUnit || 'unidade',
+          moq: saved.moq || 1,
+          monthlyCapacity: '',
+          leadTimeDays: 15,
+          incoterm: 'FOB',
+          loadingPort: defaultPorts[0] || 'Guangzhou',
+          customizationAvailable: true,
+          sampleAvailable: true,
+          sampleCost: 0,
+          priceDate: new Date().toISOString().split('T')[0],
+          infoSource: 'Cotação Direta do Catálogo',
+          notes: ''
+        });
+      }
+    }
+
     setIsProductModalOpen(false);
+  };
+
+  // Open Quick Price & MOQ Modal
+  const handleOpenQuickPriceModal = (prod: ProductItem) => {
+    const matchedRelations = relations.filter(r => r.productId === prod.id);
+    const bestRel = matchedRelations.length > 0 
+      ? [...matchedRelations].sort((a, b) => a.indicativePrice - b.indicativePrice)[0] 
+      : undefined;
+
+    setQuickPriceProduct(prod);
+    setQuickPriceForm({
+      price: prod.indicativePrice ?? bestRel?.indicativePrice ?? 10,
+      currency: prod.currency ?? bestRel?.currency ?? 'USD',
+      priceUnit: prod.priceUnit ?? bestRel?.priceUnit ?? 'unidade',
+      moq: prod.moq ?? bestRel?.moq ?? 1,
+      supplierId: prod.defaultSupplierId ?? bestRel?.supplierId ?? (suppliers[0]?.id || '')
+    });
+    setIsQuickPriceModalOpen(true);
+  };
+
+  // Save Quick Price & MOQ Submit
+  const handleSaveQuickPriceSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickPriceProduct) return;
+
+    const priceNum = typeof quickPriceForm.price === 'number' ? quickPriceForm.price : parseFloat(quickPriceForm.price as string) || 0;
+    const moqNum = typeof quickPriceForm.moq === 'number' ? quickPriceForm.moq : parseInt(quickPriceForm.moq as string, 10) || 1;
+
+    // 1. Update Product
+    const updatedProd: ProductItem = {
+      ...quickPriceProduct,
+      indicativePrice: priceNum,
+      currency: quickPriceForm.currency,
+      priceUnit: quickPriceForm.priceUnit,
+      moq: moqNum,
+      defaultSupplierId: quickPriceForm.supplierId || quickPriceProduct.defaultSupplierId
+    };
+    onSaveProduct(updatedProd);
+
+    // 2. Update or create Supplier Relation
+    if (quickPriceForm.supplierId) {
+      const existingRel = relations.find(r => r.productId === quickPriceProduct.id && r.supplierId === quickPriceForm.supplierId);
+      if (existingRel) {
+        onSaveRelation({
+          ...existingRel,
+          indicativePrice: priceNum,
+          currency: quickPriceForm.currency,
+          priceUnit: quickPriceForm.priceUnit,
+          moq: moqNum
+        });
+      } else {
+        const nextRelId = generateNextId('REL', relations);
+        onSaveRelation({
+          id: nextRelId,
+          productId: quickPriceProduct.id,
+          supplierId: quickPriceForm.supplierId,
+          supplierRef: '',
+          indicativePrice: priceNum,
+          currency: quickPriceForm.currency,
+          priceUnit: quickPriceForm.priceUnit,
+          moq: moqNum,
+          monthlyCapacity: '',
+          leadTimeDays: 15,
+          incoterm: 'FOB',
+          loadingPort: defaultPorts[0] || 'Guangzhou',
+          customizationAvailable: true,
+          sampleAvailable: true,
+          sampleCost: 0,
+          priceDate: new Date().toISOString().split('T')[0],
+          infoSource: 'Edição Rápida de Preço & MOQ',
+          notes: ''
+        });
+      }
+    }
+
+    setIsQuickPriceModalOpen(false);
+    setQuickPriceProduct(null);
   };
 
   // Open Manage Suppliers Drawer for a Product
   const handleOpenManageSuppliers = (prod: ProductItem) => {
     setSelectedProductForSuppliers(prod);
+    setEditingRelationId(null);
     setRelationForm({
       productId: prod.id,
       supplierId: suppliers[0]?.id || '',
       supplierRef: '',
-      indicativePrice: 10,
-      currency: 'USD',
-      priceUnit: 'unidade',
-      moq: 10,
+      indicativePrice: prod.indicativePrice || 10,
+      currency: prod.currency || 'USD',
+      priceUnit: prod.priceUnit || 'unidade',
+      moq: prod.moq || 10,
       monthlyCapacity: '',
       leadTimeDays: 15,
       incoterm: 'FOB',
@@ -221,11 +478,82 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
     setIsRelationModalOpen(true);
   };
 
+  // Start editing an existing relation
+  const handleStartEditRelation = (rel: ProductSupplierRelation) => {
+    setEditingRelationId(rel.id);
+    setRelationForm({
+      ...rel
+    });
+  };
+
+  // Cancel relation editing mode
+  const handleCancelEditRelation = () => {
+    setEditingRelationId(null);
+    if (selectedProductForSuppliers) {
+      setRelationForm({
+        productId: selectedProductForSuppliers.id,
+        supplierId: suppliers[0]?.id || '',
+        supplierRef: '',
+        indicativePrice: selectedProductForSuppliers.indicativePrice || 10,
+        currency: selectedProductForSuppliers.currency || 'USD',
+        priceUnit: selectedProductForSuppliers.priceUnit || 'unidade',
+        moq: selectedProductForSuppliers.moq || 10,
+        monthlyCapacity: '',
+        leadTimeDays: 15,
+        incoterm: 'FOB',
+        loadingPort: defaultPorts[0] || 'Guangzhou',
+        customizationAvailable: true,
+        sampleAvailable: true,
+        sampleCost: 0,
+        priceDate: new Date().toISOString().split('T')[0],
+        infoSource: 'Catálogo / Cotação WeChat',
+        notes: ''
+      });
+    }
+  };
+
   // Save Relation
   const handleSaveRelationSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedProductForSuppliers || !relationForm.supplierId) {
       alert('Selecione um fornecedor.');
+      return;
+    }
+
+    if (editingRelationId) {
+      const updatedRel: ProductSupplierRelation = {
+        id: editingRelationId,
+        productId: selectedProductForSuppliers.id,
+        supplierId: relationForm.supplierId,
+        supplierRef: relationForm.supplierRef || '',
+        indicativePrice: Number(relationForm.indicativePrice) || 0,
+        currency: (relationForm.currency as CurrencyType) || 'USD',
+        priceUnit: (relationForm.priceUnit as PriceUnit) || 'unidade',
+        moq: Number(relationForm.moq) || 1,
+        monthlyCapacity: relationForm.monthlyCapacity || '',
+        leadTimeDays: Number(relationForm.leadTimeDays) || 15,
+        incoterm: (relationForm.incoterm as IncotermType) || 'FOB',
+        loadingPort: relationForm.loadingPort || 'Guangzhou',
+        customizationAvailable: !!relationForm.customizationAvailable,
+        sampleAvailable: !!relationForm.sampleAvailable,
+        sampleCost: Number(relationForm.sampleCost) || 0,
+        priceDate: relationForm.priceDate || new Date().toISOString().split('T')[0],
+        infoSource: relationForm.infoSource || '',
+        notes: relationForm.notes || ''
+      };
+
+      onSaveRelation(updatedRel);
+      setEditingRelationId(null);
+
+      // Also update product's default price and moq
+      onSaveProduct({
+        ...selectedProductForSuppliers,
+        indicativePrice: updatedRel.indicativePrice,
+        currency: updatedRel.currency,
+        priceUnit: updatedRel.priceUnit,
+        moq: updatedRel.moq,
+        defaultSupplierId: updatedRel.supplierId
+      });
       return;
     }
 
@@ -252,6 +580,16 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
     };
 
     onSaveRelation(newRel);
+
+    // Also update product default price and moq
+    onSaveProduct({
+      ...selectedProductForSuppliers,
+      indicativePrice: newRel.indicativePrice,
+      currency: newRel.currency,
+      priceUnit: newRel.priceUnit,
+      moq: newRel.moq,
+      defaultSupplierId: newRel.supplierId
+    });
   };
 
   return (
@@ -350,20 +688,40 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
               ? [...productRelations].sort((a, b) => a.indicativePrice - b.indicativePrice)[0]
               : null;
 
+            const effectivePrice = product.indicativePrice ?? bestRelation?.indicativePrice ?? 0;
+            const effectiveCurrency = product.currency ?? bestRelation?.currency ?? 'USD';
+            const effectiveUnit = product.priceUnit ?? bestRelation?.priceUnit ?? 'unidade';
+            const effectiveMoq = product.moq ?? bestRelation?.moq ?? 1;
+            const linkedSupplier = suppliers.find(s => s.id === (product.defaultSupplierId || bestRelation?.supplierId));
+
+            const hasValidImage = product.images && product.images.length > 0 && product.images[0] && product.images[0].trim() !== '' && product.images[0] !== '/IMG-20260215-WA0003.jpg';
+
             return (
               <div 
                 key={product.id}
                 className="bg-white rounded-2xl border border-slate-200/80 shadow-sm hover:shadow-md transition-all flex flex-col justify-between overflow-hidden group"
               >
                 <div>
-                  {/* Top Image & Badge */}
-                  <div className="relative h-44 bg-slate-100 overflow-hidden border-b border-slate-100">
-                    <img 
-                      src={product.images[0] || '/IMG-20260215-WA0003.jpg'} 
-                      alt={product.namePt}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" 
-                    />
-                    <div className="absolute top-3 left-3 flex items-center gap-1.5">
+                  {/* Top Image & Badge - No Logo Fallback */}
+                  <div className="relative h-44 bg-slate-100 overflow-hidden border-b border-slate-100 flex items-center justify-center">
+                    {hasValidImage ? (
+                      <img 
+                        src={product.images[0]} 
+                        alt={product.namePt}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                        }}
+                      />
+                    ) : (
+                      <div className="w-full h-full flex flex-col items-center justify-center bg-slate-50 text-slate-400 p-4">
+                        <Package size={38} className="text-slate-300 mb-1" />
+                        <span className="text-[11px] font-semibold text-slate-500">Sem fotografia</span>
+                        <span className="text-[10px] text-slate-400">{product.category}</span>
+                      </div>
+                    )}
+
+                    <div className="absolute top-3 left-3 flex items-center gap-1.5 z-10">
                       <span className="font-mono text-[10px] font-extrabold px-2 py-0.5 bg-slate-900/80 text-white backdrop-blur-sm rounded-md">
                         {product.id}
                       </span>
@@ -372,11 +730,18 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                       </span>
                     </div>
 
-                    <div className="absolute top-3 right-3 flex items-center gap-1">
+                    <div className="absolute top-3 right-3 flex items-center gap-1 z-10">
+                      <button
+                        onClick={() => handleOpenQuickPriceModal(product)}
+                        className="h-7 px-2 rounded-lg bg-white/95 text-emerald-700 hover:bg-emerald-50 flex items-center gap-1 backdrop-blur-sm shadow text-[11px] font-bold transition-colors cursor-pointer"
+                        title="Editar Preço e Quantidade Mínima"
+                      >
+                        <DollarSign size={12} /> Preço/MOQ
+                      </button>
                       <button
                         onClick={() => handleOpenEditProduct(product)}
-                        className="w-7 h-7 rounded-lg bg-white/90 text-slate-700 hover:text-corp-blue flex items-center justify-center backdrop-blur-sm shadow transition-colors"
-                        title="Editar Produto"
+                        className="w-7 h-7 rounded-lg bg-white/95 text-slate-700 hover:text-corp-blue flex items-center justify-center backdrop-blur-sm shadow transition-colors cursor-pointer"
+                        title="Editar Produto Completo"
                       >
                         <Edit3 size={13} />
                       </button>
@@ -386,7 +751,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                             onDeleteProduct(product.id);
                           }
                         }}
-                        className="w-7 h-7 rounded-lg bg-white/90 text-slate-700 hover:text-red-600 flex items-center justify-center backdrop-blur-sm shadow transition-colors"
+                        className="w-7 h-7 rounded-lg bg-white/95 text-slate-700 hover:text-red-600 flex items-center justify-center backdrop-blur-sm shadow transition-colors cursor-pointer"
                         title="Remover"
                       >
                         <Trash2 size={13} />
@@ -430,43 +795,67 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                       </div>
                     </div>
 
-                    {/* Fornecedores Vinculados */}
-                    <div className="pt-1">
-                      <div className="flex items-center justify-between text-xs mb-1.5">
-                        <span className="text-slate-500 font-semibold flex items-center gap-1 text-[11px]">
-                          <Building2 size={13} className="text-corp-blue" />
-                          Fornecedores ({productRelations.length})
-                        </span>
-                        <button
-                          onClick={() => handleOpenManageSuppliers(product)}
-                          className="text-[11px] font-bold text-corp-blue hover:text-corp-orange flex items-center gap-0.5 cursor-pointer"
-                        >
-                          <Link2 size={12} /> Gerir Vínculos
-                        </button>
-                      </div>
+                    {/* Preço Indicativo & MOQ - Caixa com Edição Rápida */}
+                    <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3 text-xs space-y-2">
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block">
+                            Preço Indicativo (FOB):
+                          </span>
+                          {effectivePrice > 0 ? (
+                            <div className="flex items-baseline gap-1 mt-0.5">
+                              <span className="text-base font-black text-emerald-700 font-mono">
+                                {effectiveCurrency} ${effectivePrice.toFixed(2)}
+                              </span>
+                              <span className="text-[11px] text-slate-500">
+                                /{effectiveUnit}
+                              </span>
+                            </div>
+                          ) : (
+                            <span className="text-xs font-semibold text-amber-600 block mt-0.5">
+                              Não definido
+                            </span>
+                          )}
+                        </div>
 
-                      {bestRelation ? (
-                        <div className="bg-emerald-50/70 border border-emerald-100 rounded-xl p-2.5 text-xs flex items-center justify-between">
-                          <div>
-                            <span className="text-[10px] text-emerald-800 font-semibold block">
-                              Melhor Preço Indicativo:
-                            </span>
-                            <span className="text-base font-extrabold text-emerald-700">
-                              {bestRelation.currency} ${bestRelation.indicativePrice.toFixed(2)}
-                            </span>
-                            <span className="text-[10px] text-slate-500 ml-1">
-                              /{bestRelation.priceUnit} (MOQ: {bestRelation.moq})
-                            </span>
-                          </div>
-                          <span className="text-[10px] font-bold bg-white text-slate-700 px-2 py-1 rounded border border-emerald-200">
-                            {bestRelation.loadingPort}
+                        <div className="text-right">
+                          <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider block">
+                            Mínimo (MOQ):
+                          </span>
+                          <span className="text-xs font-bold text-slate-800 font-mono block mt-0.5">
+                            {effectiveMoq} {effectiveUnit}(s)
                           </span>
                         </div>
-                      ) : (
-                        <div className="bg-amber-50/60 border border-amber-100 rounded-xl p-2 text-center text-[11px] text-amber-700">
-                          Nenhum fornecedor vinculado ainda. Clique em "Gerir Vínculos".
+                      </div>
+
+                      {linkedSupplier && (
+                        <div className="text-[10px] text-slate-500 truncate border-t border-slate-200/60 pt-1.5 flex items-center gap-1">
+                          <Building2 size={11} className="text-corp-blue shrink-0" />
+                          <span className="truncate">Fornecedor: <strong>{linkedSupplier.companyName}</strong></span>
                         </div>
                       )}
+
+                      <div className="pt-1 flex items-center justify-between border-t border-slate-200/60">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenQuickPriceModal(product)}
+                          className="text-[11px] font-bold text-corp-blue hover:text-corp-orange flex items-center gap-1 cursor-pointer py-1 px-2.5 rounded-lg bg-white border border-slate-200 hover:border-corp-blue transition-colors shadow-2xs"
+                          title="Clique para editar o preço e a quantidade mínima deste produto"
+                        >
+                          <DollarSign size={12} className="text-emerald-600" />
+                          <span>Editar Preço & MOQ</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleOpenManageSuppliers(product)}
+                          className="text-[11px] font-medium text-slate-600 hover:text-slate-900 flex items-center gap-1 cursor-pointer py-1 px-2 rounded-lg hover:bg-slate-200/70 transition-colors"
+                          title="Ver ou adicionar fornecedores para este produto"
+                        >
+                          <Link2 size={11} />
+                          <span>{productRelations.length} Fornecedor(es)</span>
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -689,54 +1078,226 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                 </div>
               </div>
 
-              {/* URL da Imagem */}
-              <div className="space-y-2">
-                <label className="block text-xs font-semibold text-slate-700">URL da Imagem do Produto</label>
-                <div className="flex gap-2">
-                  <input
-                    type="url"
-                    value={imageUrlInput}
-                    onChange={e => setImageUrlInput(e.target.value)}
-                    placeholder="https://exemplo.com/foto-do-produto.jpg"
-                    className="flex-1 px-3 py-2 rounded-xl border border-slate-200 text-xs"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (imageUrlInput.trim()) {
-                        setProductForm({
-                          ...productForm,
-                          images: [...(productForm.images || []), imageUrlInput.trim()]
-                        });
-                        setImageUrlInput('');
-                      }
-                    }}
-                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 rounded-xl text-xs font-bold text-slate-700"
-                  >
-                    Adicionar Foto
-                  </button>
+              {/* 3. Preço Indicativo, Moeda & MOQ (Mínimo de Compra) */}
+              <div className="space-y-3 p-4 bg-emerald-50/50 rounded-2xl border border-emerald-100">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-emerald-900 flex items-center gap-1.5">
+                    <DollarSign size={14} className="text-emerald-700" />
+                    3. Preço Indicativo & MOQ (Mínimo de Compra)
+                  </h4>
+                  <span className="text-[10px] text-emerald-800 bg-emerald-100/80 px-2 py-0.5 rounded font-semibold">
+                    Editável Diretamente
+                  </span>
                 </div>
-                {productForm.images && productForm.images.length > 0 && (
-                  <div className="flex gap-2 mt-2">
-                    {productForm.images.map((img, idx) => (
-                      <div key={idx} className="relative w-14 h-14 rounded-lg overflow-hidden border border-slate-200">
-                        <img src={img} alt="Preview" className="w-full h-full object-cover" />
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setProductForm({
-                              ...productForm,
-                              images: productForm.images?.filter((_, i) => i !== idx)
-                            });
-                          }}
-                          className="absolute top-0.5 right-0.5 bg-red-600 text-white rounded-full w-4 h-4 flex items-center justify-center text-[10px]"
-                        >
-                          ×
-                        </button>
-                      </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      Preço Unitário (FOB) *
+                    </label>
+                    <div className="relative">
+                      <span className="absolute left-3 top-2 text-xs font-bold text-slate-400">$</span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={productForm.indicativePrice ?? ''}
+                        onChange={e => setProductForm({ 
+                          ...productForm, 
+                          indicativePrice: e.target.value === '' ? undefined : parseFloat(e.target.value) || 0 
+                        })}
+                        placeholder="10.50"
+                        className="w-full pl-7 pr-3 py-2 rounded-xl border border-slate-200 text-xs font-mono font-bold text-emerald-800 bg-white"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Moeda</label>
+                    <select
+                      value={productForm.currency || 'USD'}
+                      onChange={e => setProductForm({ ...productForm, currency: e.target.value as CurrencyType })}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white font-semibold"
+                    >
+                      <option value="USD">USD ($)</option>
+                      <option value="CNY">CNY (¥)</option>
+                      <option value="MZN">MZN (MT)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">Unidade</label>
+                    <select
+                      value={productForm.priceUnit || 'unidade'}
+                      onChange={e => setProductForm({ ...productForm, priceUnit: e.target.value as PriceUnit })}
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white font-medium"
+                    >
+                      <option value="unidade">Unidade (pcs)</option>
+                      <option value="caixa">Caixa (box)</option>
+                      <option value="metro">Metro (m)</option>
+                      <option value="m2">Metro² (m²)</option>
+                      <option value="kg">Quilograma (kg)</option>
+                      <option value="set">Conjunto (set)</option>
+                      <option value="par">Par (pair)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-700 mb-1">
+                      MOQ (Qtd. Mínima) *
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={productForm.moq ?? ''}
+                      onChange={e => setProductForm({ 
+                        ...productForm, 
+                        moq: e.target.value === '' ? undefined : parseInt(e.target.value, 10) || 1 
+                      })}
+                      placeholder="10"
+                      className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-mono font-bold text-slate-800 bg-white"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1">
+                    Fornecedor Principal Vinculado (Opcional)
+                  </label>
+                  <select
+                    value={productForm.defaultSupplierId || ''}
+                    onChange={e => setProductForm({ ...productForm, defaultSupplierId: e.target.value })}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white"
+                  >
+                    <option value="">Sem fornecedor pré-vinculado</option>
+                    {suppliers.map(s => (
+                      <option key={s.id} value={s.id}>
+                        {s.id} - {s.companyName} ({s.city})
+                      </option>
                     ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* 4. Fotografias do Produto (Upload do Dispositivo & URLs) */}
+              <div className="space-y-3 p-4 bg-slate-50/80 rounded-2xl border border-slate-200">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                      <ImageIcon size={14} className="text-corp-blue" />
+                      4. Fotografias do Produto
+                    </h4>
+                    <p className="text-[11px] text-slate-500">
+                      Carregue fotos reais do produto do seu computador ou telemóvel (nunca mostrará o logótipo).
+                    </p>
+                  </div>
+                  {productForm.images && productForm.images.length > 0 && (
+                    <span className="text-[10px] font-bold text-corp-blue bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100">
+                      {productForm.images.length} foto(s)
+                    </span>
+                  )}
+                </div>
+
+                {/* Input de Arquivo Oculto */}
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  accept="image/png, image/jpeg, image/webp, image/jpg"
+                  multiple
+                  onChange={handlePhotoFilesUpload}
+                  className="hidden"
+                />
+
+                {/* Dropzone & Upload Button */}
+                <div 
+                  onClick={() => fileInputRef.current?.click()}
+                  className="border-2 border-dashed border-slate-300 hover:border-corp-blue bg-white hover:bg-blue-50/30 p-5 rounded-2xl text-center cursor-pointer transition-all flex flex-col items-center justify-center gap-2 group"
+                >
+                  <div className="w-10 h-10 rounded-xl bg-blue-50 group-hover:bg-blue-100 text-corp-blue flex items-center justify-center transition-colors">
+                    <Upload size={20} />
+                  </div>
+                  <div>
+                    <span className="text-xs font-bold text-slate-800 group-hover:text-corp-blue">
+                      {isUploadingPhoto ? 'A carregar e a processar fotos...' : 'Clique para carregar fotos do dispositivo'}
+                    </span>
+                    <p className="text-[10px] text-slate-400 mt-0.5">
+                      Formatos suportados: JPG, PNG, WEBP (Comprimido automaticamente para rapidez)
+                    </p>
+                  </div>
+                </div>
+
+                {/* Galeria de Fotos Carregadas */}
+                {productForm.images && productForm.images.length > 0 && (
+                  <div className="space-y-1.5 pt-1">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                      Fotos Atuais do Produto:
+                    </span>
+                    <div className="flex flex-wrap gap-3">
+                      {productForm.images.map((img, idx) => (
+                        <div 
+                          key={idx} 
+                          className="relative w-20 h-20 rounded-xl overflow-hidden border-2 border-slate-200 bg-white shadow-xs group"
+                        >
+                          <img 
+                            src={img} 
+                            alt={`Foto ${idx + 1}`} 
+                            className="w-full h-full object-cover" 
+                          />
+                          {idx === 0 && (
+                            <span className="absolute bottom-0 inset-x-0 bg-corp-blue/90 text-white text-[9px] font-bold text-center py-0.5">
+                              Principal
+                            </span>
+                          )}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setProductForm({
+                                ...productForm,
+                                images: productForm.images?.filter((_, i) => i !== idx)
+                              });
+                            }}
+                            className="absolute top-1 right-1 bg-red-600 hover:bg-red-700 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs shadow transition-colors cursor-pointer"
+                            title="Remover fotografia"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
+
+                {/* Adicionar Foto por URL Web (Alternativa) */}
+                <div className="pt-2 border-t border-slate-200/60">
+                  <span className="block text-[11px] font-medium text-slate-500 mb-1">
+                    Ou colar endereço web (URL) da imagem:
+                  </span>
+                  <div className="flex gap-2">
+                    <input
+                      type="url"
+                      value={imageUrlInput}
+                      onChange={e => setImageUrlInput(e.target.value)}
+                      placeholder="https://exemplo.com/foto-do-produto.jpg"
+                      className="flex-1 px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (imageUrlInput.trim()) {
+                          setProductForm({
+                            ...productForm,
+                            images: [...(productForm.images || []).filter(img => img && img.trim() !== '' && img !== '/IMG-20260215-WA0003.jpg'), imageUrlInput.trim()]
+                          });
+                          setImageUrlInput('');
+                        }
+                      }}
+                      className="px-3 py-2 bg-slate-200 hover:bg-slate-300 rounded-xl text-xs font-bold text-slate-700 transition-colors cursor-pointer"
+                    >
+                      Adicionar Link
+                    </button>
+                  </div>
+                </div>
               </div>
 
               {/* Submit Buttons */}
@@ -818,6 +1379,13 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
 
                             <div className="flex items-center gap-2">
                               <button
+                                onClick={() => handleStartEditRelation(rel)}
+                                className="px-2.5 py-1 bg-amber-500 hover:bg-amber-600 text-white rounded-lg text-[11px] font-bold transition-colors flex items-center gap-1 cursor-pointer"
+                                title="Editar preço, MOQ e termos desta cotação"
+                              >
+                                <Edit3 size={11} /> Editar Cotação
+                              </button>
+                              <button
                                 onClick={() => {
                                   onSendToCalculator(selectedProductForSuppliers, rel);
                                   setIsRelationModalOpen(false);
@@ -874,11 +1442,32 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
               )}
             </div>
 
-            {/* Form to link a new supplier */}
-            <form onSubmit={handleSaveRelationSubmit} className="space-y-4 pt-4 border-t border-slate-100">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-corp-blue">
-                + Associar Mais um Fornecedor a este Produto
-              </h4>
+            {/* Form to link or edit a supplier relation */}
+            <form onSubmit={handleSaveRelationSubmit} className="space-y-4 pt-4 border-t border-slate-200">
+              <div className="flex items-center justify-between">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-corp-blue flex items-center gap-1.5">
+                  {editingRelationId ? (
+                    <>
+                      <Edit3 size={14} className="text-amber-600" />
+                      Editar Cotação do Fornecedor ({relationForm.supplierId})
+                    </>
+                  ) : (
+                    <>
+                      <Plus size={14} />
+                      + Associar Mais um Fornecedor a este Produto
+                    </>
+                  )}
+                </h4>
+                {editingRelationId && (
+                  <button
+                    type="button"
+                    onClick={handleCancelEditRelation}
+                    className="text-xs font-bold text-slate-500 hover:text-slate-800 underline cursor-pointer"
+                  >
+                    Cancelar Edição
+                  </button>
+                )}
+              </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div className="sm:col-span-2">
@@ -1027,12 +1616,153 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                 />
               </div>
 
-              <div className="flex justify-end pt-2">
+              <div className="flex justify-end gap-2 pt-2">
+                {editingRelationId && (
+                  <button
+                    type="button"
+                    onClick={handleCancelEditRelation}
+                    className="px-4 py-2 border border-slate-200 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                  >
+                    Cancelar
+                  </button>
+                )}
                 <button
                   type="submit"
                   className="btn-modern-primary !py-2 px-5 text-xs font-bold uppercase tracking-wider cursor-pointer"
                 >
-                  Salvar Associação
+                  {editingRelationId ? 'Atualizar Cotação' : 'Salvar Associação'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Quick Edit Price & MOQ */}
+      {isQuickPriceModalOpen && quickPriceProduct && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 space-y-5 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-start justify-between">
+              <div>
+                <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-md">
+                  {quickPriceProduct.id} • {quickPriceProduct.category}
+                </span>
+                <h3 className="font-heading font-bold text-lg text-slate-900 mt-1 leading-snug">
+                  Editar Preço & MOQ
+                </h3>
+                <p className="text-xs text-slate-500 line-clamp-1">
+                  {quickPriceProduct.namePt}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsQuickPriceModalOpen(false)}
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-900 flex items-center justify-center transition-colors cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveQuickPriceSubmit} className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Preço Indicativo (FOB) *
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-2.5 text-xs font-bold text-slate-400">$</span>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      required
+                      value={quickPriceForm.price}
+                      onChange={e => setQuickPriceForm({ ...quickPriceForm, price: e.target.value === '' ? '' : parseFloat(e.target.value) || 0 })}
+                      placeholder="0.00"
+                      className="w-full pl-7 pr-3 py-2 rounded-xl border border-slate-200 text-sm font-mono font-bold text-emerald-800 bg-white focus:outline-none focus:border-emerald-600"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Moeda</label>
+                  <select
+                    value={quickPriceForm.currency}
+                    onChange={e => setQuickPriceForm({ ...quickPriceForm, currency: e.target.value as CurrencyType })}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white font-semibold"
+                  >
+                    <option value="USD">USD ($)</option>
+                    <option value="CNY">CNY (¥)</option>
+                    <option value="MZN">MZN (MT)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    MOQ (Qtd. Mínima) *
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    required
+                    value={quickPriceForm.moq}
+                    onChange={e => setQuickPriceForm({ ...quickPriceForm, moq: e.target.value === '' ? '' : parseInt(e.target.value, 10) || 1 })}
+                    placeholder="1"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-sm font-mono font-bold text-slate-800 bg-white focus:outline-none focus:border-corp-blue"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">Unidade</label>
+                  <select
+                    value={quickPriceForm.priceUnit}
+                    onChange={e => setQuickPriceForm({ ...quickPriceForm, priceUnit: e.target.value as PriceUnit })}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white font-medium"
+                  >
+                    <option value="unidade">Unidade (pcs)</option>
+                    <option value="caixa">Caixa (box)</option>
+                    <option value="metro">Metro (m)</option>
+                    <option value="m2">Metro² (m²)</option>
+                    <option value="kg">Quilograma (kg)</option>
+                    <option value="set">Conjunto (set)</option>
+                    <option value="par">Par (pair)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Fornecedor Vinculado
+                </label>
+                <select
+                  value={quickPriceForm.supplierId}
+                  onChange={e => setQuickPriceForm({ ...quickPriceForm, supplierId: e.target.value })}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white"
+                >
+                  <option value="">Sem fornecedor pré-vinculado</option>
+                  {suppliers.map(s => (
+                    <option key={s.id} value={s.id}>
+                      {s.id} - {s.companyName} ({s.city})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsQuickPriceModalOpen(false)}
+                  className="px-4 py-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-100 font-semibold text-xs cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="btn-modern-primary !py-2 px-5 text-xs font-bold uppercase tracking-wider cursor-pointer"
+                >
+                  Salvar Preço & MOQ
                 </button>
               </div>
             </form>

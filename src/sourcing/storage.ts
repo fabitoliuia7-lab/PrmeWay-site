@@ -236,7 +236,12 @@ export const INITIAL_PRODUCTS: ProductItem[] = [
     keywords: ['solar', 'painel solar', 'energia', '550w', 'fotovoltaico', 'monocristalino', 'inversor'],
     images: ['https://images.unsplash.com/photo-1509391365360-2e959784a276?w=600&auto=format&fit=crop&q=80'],
     status: 'ativo',
-    createdAt: '2026-02-15T12:00:00Z'
+    createdAt: '2026-02-15T12:00:00Z',
+    indicativePrice: 62.50,
+    currency: 'USD',
+    priceUnit: 'unidade',
+    moq: 62,
+    defaultSupplierId: 'FOR-0002'
   },
   {
     id: 'PROD-0002',
@@ -257,7 +262,12 @@ export const INITIAL_PRODUCTS: ProductItem[] = [
     keywords: ['porcelanato', 'piso', 'ceramica', 'azulejo', 'construcao', 'acabamento', 'calacatta'],
     images: ['https://images.unsplash.com/photo-1581094794329-c8112a89af12?w=600&auto=format&fit=crop&q=80'],
     status: 'ativo',
-    createdAt: '2026-02-18T10:00:00Z'
+    createdAt: '2026-02-18T10:00:00Z',
+    indicativePrice: 6.80,
+    currency: 'USD',
+    priceUnit: 'caixa',
+    moq: 500,
+    defaultSupplierId: 'FOR-0001'
   },
   {
     id: 'PROD-0003',
@@ -278,7 +288,12 @@ export const INITIAL_PRODUCTS: ProductItem[] = [
     keywords: ['cadeira', 'escritorio', 'ergonomica', 'computador', 'moveis', 'office'],
     images: ['https://images.unsplash.com/photo-1580481077194-43b177893dd4?w=600&auto=format&fit=crop&q=80'],
     status: 'ativo',
-    createdAt: '2026-02-20T11:00:00Z'
+    createdAt: '2026-02-20T11:00:00Z',
+    indicativePrice: 38.00,
+    currency: 'USD',
+    priceUnit: 'unidade',
+    moq: 50,
+    defaultSupplierId: 'FOR-0003'
   },
   {
     id: 'PROD-0004',
@@ -299,7 +314,12 @@ export const INITIAL_PRODUCTS: ProductItem[] = [
     keywords: ['ssd', 'nvme', 'computador', 'armazenamento', 'disco', 'ti', 'informatica'],
     images: ['https://images.unsplash.com/photo-1597872200969-2b65d56bd16b?w=600&auto=format&fit=crop&q=80'],
     status: 'ativo',
-    createdAt: '2026-02-25T14:30:00Z'
+    createdAt: '2026-02-25T14:30:00Z',
+    indicativePrice: 32.50,
+    currency: 'USD',
+    priceUnit: 'unidade',
+    moq: 100,
+    defaultSupplierId: 'FOR-0004'
   }
 ];
 
@@ -641,11 +661,33 @@ export interface SourcingStore {
 
 export function getInitialSourcingStore(): SourcingStore {
   const loadedConfig = loadFromLocal<SourcingConfig>('config', DEFAULT_CONFIG);
+  const loadedSuppliers = loadFromLocal<Supplier[]>('suppliers', INITIAL_SUPPLIERS);
+  const loadedContacts = loadFromLocal<SupplierContact[]>('contacts', INITIAL_CONTACTS);
+  const loadedRelations = loadFromLocal<ProductSupplierRelation[]>('relations', INITIAL_RELATIONS);
+  const rawProducts = loadFromLocal<ProductItem[]>('products', INITIAL_PRODUCTS);
+
+  // Sanitize products: remove any fallback to the company logo and ensure price/MOQ are populated
+  const loadedProducts = rawProducts.map(prod => {
+    const cleanImages = (prod.images || []).filter(img => img && img !== '/IMG-20260215-WA0003.jpg');
+    const matchedRelations = loadedRelations.filter(r => r.productId === prod.id);
+    const bestRel = matchedRelations.length > 0 ? [...matchedRelations].sort((a, b) => a.indicativePrice - b.indicativePrice)[0] : undefined;
+
+    return {
+      ...prod,
+      images: cleanImages,
+      indicativePrice: prod.indicativePrice ?? bestRel?.indicativePrice ?? 0,
+      currency: prod.currency ?? bestRel?.currency ?? 'USD',
+      priceUnit: prod.priceUnit ?? bestRel?.priceUnit ?? 'unidade',
+      moq: prod.moq ?? bestRel?.moq ?? 1,
+      defaultSupplierId: prod.defaultSupplierId ?? bestRel?.supplierId
+    };
+  });
+
   return {
-    suppliers: loadFromLocal<Supplier[]>('suppliers', INITIAL_SUPPLIERS),
-    contacts: loadFromLocal<SupplierContact[]>('contacts', INITIAL_CONTACTS),
-    products: loadFromLocal<ProductItem[]>('products', INITIAL_PRODUCTS),
-    relations: loadFromLocal<ProductSupplierRelation[]>('relations', INITIAL_RELATIONS),
+    suppliers: loadedSuppliers,
+    contacts: loadedContacts,
+    products: loadedProducts,
+    relations: loadedRelations,
     clients: loadFromLocal<SourcingClient[]>('clients', INITIAL_CLIENTS),
     orders: loadFromLocal<SourcingOrder[]>('orders', INITIAL_ORDERS),
     quotes: loadFromLocal<Quotation[]>('quotes', INITIAL_QUOTES),

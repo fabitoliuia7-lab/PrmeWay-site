@@ -53,6 +53,7 @@ export interface SourcingModuleProps {
     hsCode?: string;
     freightEstimateUSD?: number;
     supplierName?: string;
+    imageUrl?: string;
   }) => void;
 }
 
@@ -270,16 +271,35 @@ export const SourcingModule: React.FC<SourcingModuleProps> = ({
       }
       const supp = data.suppliers.find(s => s.id === relation.supplierId);
       supplierName = supp?.companyName;
+    } else if (product.indicativePrice && product.indicativePrice > 0) {
+      if (product.currency === 'CNY') {
+        const rate = data.settings.exchangeRates.USD_TO_CNY || 7.23;
+        priceUSD = Number((product.indicativePrice / rate).toFixed(2));
+      } else if (product.currency === 'MZN') {
+        const rate = data.settings.exchangeRates.USD_TO_MZN || 64;
+        priceUSD = Number((product.indicativePrice / rate).toFixed(2));
+      } else {
+        priceUSD = product.indicativePrice;
+      }
+      if (product.defaultSupplierId) {
+        const supp = data.suppliers.find(s => s.id === product.defaultSupplierId);
+        supplierName = supp?.companyName;
+      }
     }
+
+    const productImage = product.images && product.images.length > 0 && product.images[0] !== '/IMG-20260215-WA0003.jpg' && product.images[0].trim() !== ''
+      ? product.images[0]
+      : undefined;
 
     onInjectIntoCalculator({
       productName: product.namePt,
       fobPriceUSD: priceUSD,
-      quantity: relation?.moq || 10,
+      quantity: relation?.moq || product.moq || 10,
       weightKg: product.weightKg || 1,
       cbm: product.dimensions?.cbmUnit || 0.05,
       hsCode: product.hsCode,
-      supplierName
+      supplierName,
+      imageUrl: productImage
     });
   };
 
@@ -296,6 +316,10 @@ export const SourcingModule: React.FC<SourcingModuleProps> = ({
       priceUSD = Number((quote.unitPrice / rate).toFixed(2));
     }
 
+    const productImage = product && product.images && product.images.length > 0 && product.images[0] !== '/IMG-20260215-WA0003.jpg' && product.images[0].trim() !== ''
+      ? product.images[0]
+      : undefined;
+
     onInjectIntoCalculator({
       productName: product ? product.namePt : `Item Cotado (${quote.id})`,
       fobPriceUSD: priceUSD,
@@ -304,7 +328,8 @@ export const SourcingModule: React.FC<SourcingModuleProps> = ({
       cbm: product?.dimensions?.cbmUnit || 0.1,
       hsCode: product?.hsCode,
       freightEstimateUSD: quote.estimatedFreightUSD,
-      supplierName: supplier?.companyName
+      supplierName: supplier?.companyName,
+      imageUrl: productImage
     });
   };
 

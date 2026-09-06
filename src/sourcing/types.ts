@@ -57,6 +57,11 @@ export interface ProductItem {
   images: string[];
   status: ProductStatus;
   createdAt: string;
+  indicativePrice?: number;
+  currency?: CurrencyType;
+  priceUnit?: PriceUnit;
+  moq?: number;
+  defaultSupplierId?: string;
 }
 
 export type CurrencyType = 'USD' | 'CNY' | 'MZN';

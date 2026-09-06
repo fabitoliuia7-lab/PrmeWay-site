@@ -256,11 +256,20 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               {products.slice(0, 4).map(prod => (
                 <div key={prod.id} className="p-3 border border-slate-100 rounded-xl hover:border-slate-300 transition-all bg-slate-50/50">
                   <div className="flex items-start gap-3">
-                    <img 
-                      src={prod.images[0] || '/IMG-20260215-WA0003.jpg'} 
-                      alt={prod.namePt}
-                      className="w-12 h-12 rounded-lg object-cover bg-white p-0.5 border border-slate-200 shrink-0" 
-                    />
+                    {prod.images && prod.images.length > 0 && prod.images[0] && prod.images[0].trim() !== '' && prod.images[0] !== '/IMG-20260215-WA0003.jpg' ? (
+                      <img 
+                        src={prod.images[0]} 
+                        alt={prod.namePt}
+                        className="w-12 h-12 rounded-lg object-cover bg-white p-0.5 border border-slate-200 shrink-0" 
+                        onError={(e) => {
+                          e.currentTarget.style.display = 'none';
+                        }}
+                      />
+                    ) : (
+                      <div className="w-12 h-12 rounded-lg bg-slate-100 flex items-center justify-center text-slate-400 border border-slate-200 shrink-0">
+                        <Package size={20} />
+                      </div>
+                    )}
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5 mb-0.5">
                         <span className="text-[10px] font-mono font-bold text-slate-500">{prod.id}</span>
@@ -272,7 +281,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       <h4 className="text-xs font-bold text-slate-900 truncate" title={prod.namePt}>
                         {prod.namePt}
                       </h4>
-                      <p className="text-[11px] text-slate-500 font-serif italic truncate">{prod.nameCn}</p>
+                      <div className="flex items-center justify-between gap-2 mt-0.5">
+                        <p className="text-[11px] text-slate-500 font-serif italic truncate">{prod.nameCn}</p>
+                        {prod.indicativePrice ? (
+                          <span className="text-[11px] font-mono font-bold text-emerald-700 shrink-0">
+                            {prod.currency || 'USD'} ${prod.indicativePrice.toFixed(2)} (MOQ: {prod.moq || 1})
+                          </span>
+                        ) : null}
+                      </div>
                     </div>
                   </div>
 
@@ -280,13 +296,22 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <span className="text-[10px] text-slate-500 font-mono">
                       HS: {prod.hsCode || 'N/D'}
                     </span>
-                    <button
-                      onClick={() => onSendProductToCalculator(prod)}
-                      className="text-[11px] font-bold text-corp-blue hover:text-corp-orange flex items-center gap-1 transition-colors cursor-pointer"
-                      title="Calcular custos de importação para Moçambique"
-                    >
-                      <Send size={12} /> Enviar à Calculadora
-                    </button>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => onNavigateTab('produtos')}
+                        className="text-[11px] font-bold text-slate-500 hover:text-slate-800 flex items-center gap-1 transition-colors cursor-pointer"
+                        title="Ir para o Catálogo para Editar Preço & MOQ"
+                      >
+                        <Edit3 size={11} /> Editar
+                      </button>
+                      <button
+                        onClick={() => onSendProductToCalculator(prod)}
+                        className="text-[11px] font-bold text-corp-blue hover:text-corp-orange flex items-center gap-1 transition-colors cursor-pointer"
+                        title="Calcular custos de importação para Moçambique"
+                      >
+                        <Send size={12} /> Calculadora
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}

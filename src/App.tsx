@@ -793,6 +793,7 @@ function AppContent() {
     hsCode?: string;
     freightEstimateUSD?: number;
     supplierName?: string;
+    imageUrl?: string;
   }) => {
     const newProduct: Product = {
       id: Date.now(),
@@ -805,7 +806,8 @@ function AppContent() {
       largura: 0,
       altura: 0,
       cbmUnitario: data.cbm || '',
-      pesoUnitario: data.weightKg || 0
+      pesoUnitario: data.weightKg || 0,
+      imageUrl: data.imageUrl || ''
     };
 
     setProdutos(prev => {
@@ -3261,7 +3263,7 @@ function AppContent() {
                         />
                       </div>
                       <div className="col-span-1 md:col-span-2">
-                        <label className="label-corp">Valor</label>
+                        <label className="label-corp">Preço (FOB)</label>
                         <input 
                           type="number" step="any"
                           value={p.valorUnitario || ''} 
@@ -3270,7 +3272,7 @@ function AppContent() {
                         />
                       </div>
                       <div className="col-span-1 md:col-span-2">
-                        <label className="label-corp">Qtd.</label>
+                        <label className="label-corp">Quantidade</label>
                         <input 
                           type="number" step="any"
                           value={p.quantidade} 
