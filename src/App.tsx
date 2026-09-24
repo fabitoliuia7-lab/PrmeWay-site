@@ -46,8 +46,17 @@ import {
   Share2,
   Sparkles,
   Users,
-  Landmark
+  Landmark,
+  Boxes
 } from 'lucide-react';
+import { 
+  ContentorItem, 
+  createCleanContentorItem, 
+  ContentorCalculatedItem 
+} from './contentorTypes';
+import { calculateContentores } from './contentorCalculation';
+import { ContentorFclSection } from './ContentorFclSection';
+import { ContentorProformaPrint } from './ContentorProformaPrint';
 import { motion, AnimatePresence } from 'motion/react';
 import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer, Legend } from 'recharts';
 import { 
@@ -563,10 +572,61 @@ function AppContent() {
   const [destinoRodoviario, setDestinoRodoviario] = useState<string>('');
   
   // Mode & Vehicle States
-  const [calcMode, setCalcMode] = useState<'geral' | 'veiculos'>('geral');
+  const [calcMode, setCalcMode] = useState<'geral' | 'veiculos' | 'contentor'>('geral');
   const [importType, setImportType] = useState<'grupagem' | 'oficial'>('grupagem'); // NOVO: Tipo de importação
   const [veiculosList, setVeiculosList] = useState<VeiculoItem[]>(() => [createCleanVeiculoItem()]);
   const [activeVeiculoId, setActiveVeiculoId] = useState<string>('');
+
+  // Contentor FCL States
+  const [contentoresList, setContentoresList] = useState<ContentorItem[]>(() => [createCleanContentorItem('20_dry')]);
+  const [activeContentorId, setActiveContentorId] = useState<string>('');
+
+  const currentContentor = useMemo(() => {
+    return contentoresList.find(c => c.id === activeContentorId) || contentoresList[0] || createCleanContentorItem('20_dry');
+  }, [contentoresList, activeContentorId]);
+
+  const adicionarContentor = () => {
+    const novo = createCleanContentorItem('20_dry');
+    setContentoresList(prev => [...prev, novo]);
+    setActiveContentorId(novo.id);
+  };
+
+  const duplicarContentor = (id: string) => {
+    const original = contentoresList.find(c => c.id === id);
+    if (original) {
+      const clone: ContentorItem = {
+        ...original,
+        id: Date.now().toString() + Math.random().toString(36).substring(2, 6),
+        descricaoCarga: original.descricaoCarga ? `${original.descricaoCarga} (Cópia)` : ''
+      };
+      setContentoresList(prev => [...prev, clone]);
+      setActiveContentorId(clone.id);
+    }
+  };
+
+  const removerContentor = (id: string) => {
+    if (contentoresList.length <= 1) {
+      const novo = createCleanContentorItem('20_dry');
+      setContentoresList([novo]);
+      setActiveContentorId(novo.id);
+      return;
+    }
+    const filtered = contentoresList.filter(c => c.id !== id);
+    setContentoresList(filtered);
+    if (activeContentorId === id) {
+      setActiveContentorId(filtered[0]?.id || '');
+    }
+  };
+
+  const atualizarContentorField = (id: string, field: keyof ContentorItem, value: any) => {
+    setContentoresList(prev => prev.map(c => c.id === id ? { ...c, [field]: value } : c));
+  };
+
+  const limparCalculadoraContentores = () => {
+    const novo = createCleanContentorItem('20_dry');
+    setContentoresList([novo]);
+    setActiveContentorId(novo.id);
+  };
 
   const currentVeiculo = useMemo(() => {
     return veiculosList.find(v => v.id === activeVeiculoId) || veiculosList[0] || createCleanVeiculoItem();
@@ -1298,7 +1358,57 @@ function AppContent() {
     };
   }, [veiculoCalculatedList, taxaCambio, veiculosList]);
 
+  const contentorResults = useMemo(() => {
+    return calculateContentores(contentoresList, taxaCambio);
+  }, [contentoresList, taxaCambio]);
+
+  const currentContentorCalculated = useMemo(() => {
+    return contentorResults.itemsCalculated.find(c => c.item.id === currentContentor.id) || contentorResults.itemsCalculated[0];
+  }, [contentorResults, currentContentor.id]);
+
   const results = useMemo((): CalculationResult => {
+    if (calcMode === 'contentor') {
+      const isMzn = moeda === 'MZN';
+      const subtotalProdutos = isMzn ? contentorResults.totalCifMzn : contentorResults.totalCifUsd;
+      const total = isMzn ? contentorResults.totalGeralMzn : contentorResults.totalGeralUsd;
+      const custosEnvio = isMzn 
+        ? (contentorResults.totalAlfandegaMzn + contentorResults.totalPortoTerminalMzn + contentorResults.totalLinhaNavegacaoMzn + contentorResults.totalLogisticaPrimewayMzn)
+        : ((contentorResults.totalAlfandegaMzn + contentorResults.totalPortoTerminalMzn + contentorResults.totalLinhaNavegacaoMzn + contentorResults.totalLogisticaPrimewayMzn) / contentorResults.cambio);
+      const valorComissao = isMzn ? contentorResults.totalHonorariosPrimewayMzn : (contentorResults.totalHonorariosPrimewayMzn / contentorResults.cambio);
+
+      let valorDesconto = 0;
+      if (activeCoupon) {
+        if (activeCoupon.type === 'percentage') {
+          valorDesconto = total * (activeCoupon.value / 100);
+        } else if (activeCoupon.type === 'fixed') {
+          valorDesconto = Math.min(activeCoupon.value, total);
+        }
+      }
+      const totalFinal = Math.max(0, total - valorDesconto);
+
+      return {
+        subtotalProdutos,
+        valorTaxaProc: 0,
+        valorComissao,
+        taxaLevantamento: 0,
+        custosEnvio,
+        valorDespacho: isMzn ? contentorResults.totalAlfandegaMzn : (contentorResults.totalAlfandegaMzn / contentorResults.cambio),
+        valorFreteInt: isMzn ? (contentorResults.totalFreteUsd * contentorResults.cambio) : contentorResults.totalFreteUsd,
+        valorEnvioLocal: isMzn ? contentorResults.totalTransporteInlandMzn : (contentorResults.totalTransporteInlandMzn / contentorResults.cambio),
+        total,
+        cbmTotal: contentorResults.totalCbmOcupado,
+        pesoTotal: contentorResults.totalPesoKg,
+        cbmFaturado: contentorResults.totalCbmOcupado,
+        pesoFaturado: contentorResults.totalPesoKg,
+        pesoVolumetrico: contentorResults.totalCbmOcupado * 1000,
+        pesoTaxavel: contentorResults.totalPesoKg,
+        cobrarPor: 'volume',
+        valorDesconto,
+        totalFinal,
+        couponCodeApplied: activeCoupon?.code
+      };
+    }
+
     if (calcMode === 'veiculos') {
       const isMzn = moeda === 'MZN';
       const subtotalProdutos = isMzn ? veiculoResults.cifMzn : veiculoResults.cifUsd;
@@ -1546,7 +1656,7 @@ function AppContent() {
       totalFinal,
       couponCodeApplied: activeCoupon?.code
     };
-  }, [produtos, taxaProcessamento, comissaoServicos, taxaLevantamento, tipoTransporte, taxasAduaneiras, freteInternacional, taxaEnvioLocal, calcularRevenda, margemLucro, custosAdicionais, moeda, taxaCambio, aplicarMargemSeguranca, destinoEntrega, taxaEntregaCBM, destinoRodoviario, activeCoupon, calcMode, veiculoResults, importType]);
+  }, [produtos, taxaProcessamento, comissaoServicos, taxaLevantamento, tipoTransporte, taxasAduaneiras, freteInternacional, taxaEnvioLocal, calcularRevenda, margemLucro, custosAdicionais, moeda, taxaCambio, aplicarMargemSeguranca, destinoEntrega, taxaEntregaCBM, destinoRodoviario, activeCoupon, calcMode, veiculoResults, contentorResults, importType]);
 
   // --- Handlers ---
 
@@ -1717,6 +1827,33 @@ function AppContent() {
   };
 
   const preencherDebitNoteComCotacao = () => {
+    if (calcMode === 'contentor') {
+      setDebitNoteForm({
+        clientInfo: nomeCliente || 'Cliente FCL Contentor',
+        operatorInfo: user?.displayName || 'PrimeWay Operator',
+        idCode: `PW-FCL-${quoteRefCode}`,
+        origin: contentoresList[0]?.portoOrigem || 'China',
+        shipMode: 'SEA',
+        priceType: 'FREIGHT_AND_DUTY',
+        paymentType: 'NORMAL',
+      });
+
+      const items: DebitItem[] = contentorResults.itemsCalculated.map((calc, idx) => ({
+        id: calc.item.id,
+        orderNumber: `FCL-00${idx + 1}`,
+        cargoDescription: `${calc.spec.nome} - ${calc.item.descricaoCarga || 'Mercadoria'} (Pauta: ${calc.item.codigoPautal || 'Geral'})`,
+        pkgs: calc.qty,
+        actualAmount: calc.volumeUtilizadoCbm.toFixed(2),
+        chargeableAmount: calc.volumeUtilizadoCbm.toFixed(2),
+        unitPrice: (calc.totalImportacaoMzn / (calc.qty || 1)).toFixed(2),
+        unitType: 'UN'
+      }));
+
+      setDebitItems(items);
+      setShowDebitNoteModal(true);
+      return;
+    }
+
     if (calcMode === 'veiculos') {
       setDebitNoteForm({
         clientInfo: nomeCliente || 'Cliente Veículo',
@@ -2550,30 +2687,76 @@ function AppContent() {
         </div>
 
         {/* Mode Selector Tabs */}
-        <div className="bg-slate-100 p-1.5 rounded-2xl flex flex-col sm:flex-row gap-2 border border-slate-200/80 shadow-inner max-w-3xl mx-auto">
+        <div className="bg-slate-100 p-1.5 rounded-2xl flex flex-col sm:flex-row gap-2 border border-slate-200/80 shadow-inner max-w-4xl mx-auto">
           <button
             type="button"
             onClick={() => setCalcMode('geral')}
-            className={`flex-1 py-3 px-4 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${
+            className={`flex-1 py-3 px-3.5 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer ${
               calcMode === 'geral' 
                 ? 'bg-corp-blue text-white shadow-md' 
                 : 'text-slate-600 hover:bg-slate-200/60'
             }`}
           >
-            <Package size={16} /> Cargas Gerais (CBM / Volume / Peso)
+            <Package size={16} /> Cargas Gerais (LCL / CBM)
+          </button>
+          <button
+            type="button"
+            onClick={() => setCalcMode('contentor')}
+            className={`flex-1 py-3 px-3.5 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer ${
+              calcMode === 'contentor' 
+                ? 'bg-corp-blue text-white shadow-md' 
+                : 'text-slate-600 hover:bg-slate-200/60'
+            }`}
+          >
+            <Boxes size={16} /> Contentor Inteiro (FCL 20'/40')
           </button>
           <button
             type="button"
             onClick={() => setCalcMode('veiculos')}
-            className={`flex-1 py-3 px-4 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${
+            className={`flex-1 py-3 px-3.5 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer ${
               calcMode === 'veiculos' 
                 ? 'bg-corp-blue text-white shadow-md' 
                 : 'text-slate-600 hover:bg-slate-200/60'
             }`}
           >
-            <Truck size={16} /> Veículos & Camiões (CIF China)
+            <Truck size={16} /> Veículos & Camiões (CIF)
           </button>
         </div>
+
+        {calcMode === 'contentor' && (
+          <div className="bg-gradient-to-r from-slate-950 via-[#1A284F] to-blue-900 text-white p-5 rounded-2xl shadow-lg border border-blue-500/30 flex flex-col sm:flex-row items-center justify-between gap-4 max-w-5xl mx-auto">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-amber-400/20 border border-amber-400/40 flex items-center justify-center text-amber-400 shrink-0 shadow-sm">
+                <Boxes size={24} />
+              </div>
+              <div>
+                <h4 className="font-bold text-sm uppercase tracking-wide flex items-center gap-2">
+                  Simulador de Contentor Inteiro FCL (20' / 40' / 40HC)
+                </h4>
+                <p className="text-xs text-slate-300">
+                  Cálculo oficial completo: Frete FCL + Pauta Aduaneira (Direitos, ICE, IVA, TSA, MCNET, Kudumba) + Porto & Terminais + Linha de Navegação + Inland Porta-Contentores.
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={adicionarContentor}
+                className="bg-corp-orange hover:bg-corp-orange/90 text-white font-bold text-xs px-4 py-2.5 rounded-xl uppercase tracking-wider transition-all shadow-md flex items-center gap-2 cursor-pointer"
+              >
+                <Plus size={14} /> Adicionar Contentor
+              </button>
+              <button
+                type="button"
+                onClick={limparCalculadoraContentores}
+                className="bg-white/10 hover:bg-white/20 text-white font-bold text-xs px-3 py-2.5 rounded-xl uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer"
+                title="Limpar calculadora e resetar valores"
+              >
+                <RotateCcw size={14} /> Resetar FCL
+              </button>
+            </div>
+          </div>
+        )}
 
         {calcMode === 'geral' && (
           <div className="bg-slate-50 p-2 rounded-2xl flex flex-col sm:flex-row gap-2 border border-slate-200/80 shadow-inner max-w-2xl mx-auto mt-4">
@@ -3314,6 +3497,21 @@ function AppContent() {
                   </div>
                 </section>
               </div>
+            ) : calcMode === 'contentor' ? (
+              <ContentorFclSection
+                contentoresList={contentoresList}
+                activeContentorId={activeContentorId}
+                setActiveContentorId={setActiveContentorId}
+                adicionarContentor={adicionarContentor}
+                duplicarContentor={duplicarContentor}
+                removerContentor={removerContentor}
+                atualizarContentorField={atualizarContentorField}
+                currentContentor={currentContentor}
+                calculatedItem={currentContentorCalculated}
+                taxaCambio={Number(taxaCambio) || 64}
+                moeda={moeda}
+                formatoMoeda={formatoMoeda}
+              />
             ) : (
               /* Cargo Calculator Mode */
               <>
@@ -5728,6 +5926,16 @@ function AppContent() {
                 </div>
               </div>
             </div>
+          ) : calcMode === 'contentor' ? (
+            <ContentorProformaPrint
+              itemsCalculated={contentorResults.itemsCalculated}
+              totalGeralMzn={contentorResults.totalGeralMzn}
+              totalGeralUsd={contentorResults.totalGeralUsd}
+              cambio={contentorResults.cambio}
+              moeda={moeda}
+              formatoMoeda={formatoMoeda}
+              totalFinal={results.totalFinal}
+            />
           ) : (
             /* General Cargo Invoice Print View */
             <>
