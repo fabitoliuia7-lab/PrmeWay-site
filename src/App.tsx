@@ -44,7 +44,9 @@ import {
   Wifi,
   WifiOff,
   Share2,
-  Sparkles
+  Sparkles,
+  Users,
+  Landmark
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer, Legend } from 'recharts';
@@ -516,6 +518,8 @@ function AppContent() {
   const [taxaProcessamento, setTaxaProcessamento] = useState<number | string>(0);
   const [comissaoServicos, setComissaoServicos] = useState<number | string>(0);
   const [taxaLevantamento, setTaxaLevantamento] = useState<number | string>(0);
+  const [honorariosAgenciamento, setHonorariosAgenciamento] = useState<number | string>(10000); // NOVO
+  const [taxasPortuarias, setTaxasPortuarias] = useState<number | string>(0); // NOVO
   const [tipoTransporte, setTipoTransporte] = useState('maritimo');
   const [taxasAduaneiras, setTaxasAduaneiras] = useState<number | string>(0);
   const [freteInternacional, setFreteInternacional] = useState<number | string>(0);
@@ -560,6 +564,7 @@ function AppContent() {
   
   // Mode & Vehicle States
   const [calcMode, setCalcMode] = useState<'geral' | 'veiculos'>('geral');
+  const [importType, setImportType] = useState<'grupagem' | 'oficial'>('grupagem'); // NOVO: Tipo de importação
   const [veiculosList, setVeiculosList] = useState<VeiculoItem[]>(() => [createCleanVeiculoItem()]);
   const [activeVeiculoId, setActiveVeiculoId] = useState<string>('');
 
@@ -1471,9 +1476,37 @@ function AppContent() {
       custosEnvio = convertedCost + valorEnvioLocal;
     } else {
       const baseCalculoEnvio = cbmFaturado;
-      valorDespacho = baseCalculoEnvio * Number(taxasAduaneiras);
-      valorFreteInt = baseCalculoEnvio * Number(freteInternacional);
-      custosEnvio = valorDespacho + valorFreteInt + valorEnvioLocal;
+      
+      if (importType === 'oficial') {
+        // Modo Despacho Oficial (Processo Bancário)
+        
+        // Frete puro (Baseado no CBM e no input de Frete Internacional)
+        valorFreteInt = baseCalculoEnvio * (Number(freteInternacional) || 0);
+        
+        // Simulação de Alfândega Oficial e Porto
+        // Aplicado sobre o valor CIF (Custo + Seguro + Frete). Simplificado para FOB + Frete
+        const valorCifSimulado = subtotalProdutos + valorFreteInt;
+        
+        // Direitos Aduaneiros (baseado no input do utilizador em %)
+        const taxaDireitos = (Number(taxasAduaneiras) || 0) / 100;
+        const valorDireitos = valorCifSimulado * taxaDireitos;
+        
+        // IVA (16% sobre CIF + Direitos)
+        const valorIva = (valorCifSimulado + valorDireitos) * 0.16;
+        
+        // Total Despacho = Direitos + IVA + Taxas Portuárias (Terceiros/Kudumba/etc)
+        valorDespacho = valorDireitos + valorIva + (Number(taxasPortuarias) || 0);
+        
+        // Agenciamento
+        const agenciamentoFinal = Number(honorariosAgenciamento) || 0;
+        
+        custosEnvio = valorDespacho + valorFreteInt + agenciamentoFinal + valorEnvioLocal;
+      } else {
+        // Grupagem Padrão PrimeWay DDP
+        valorDespacho = baseCalculoEnvio * Number(taxasAduaneiras);
+        valorFreteInt = baseCalculoEnvio * Number(freteInternacional);
+        custosEnvio = valorDespacho + valorFreteInt + valorEnvioLocal;
+      }
     }
 
     let total = subtotalProdutos + valorTaxaProc + valorComissao + Number(taxaLevantamento) + custosEnvio;
@@ -1513,7 +1546,7 @@ function AppContent() {
       totalFinal,
       couponCodeApplied: activeCoupon?.code
     };
-  }, [produtos, taxaProcessamento, comissaoServicos, taxaLevantamento, tipoTransporte, taxasAduaneiras, freteInternacional, taxaEnvioLocal, calcularRevenda, margemLucro, custosAdicionais, moeda, taxaCambio, aplicarMargemSeguranca, destinoEntrega, taxaEntregaCBM, destinoRodoviario, activeCoupon, calcMode, veiculoResults]);
+  }, [produtos, taxaProcessamento, comissaoServicos, taxaLevantamento, tipoTransporte, taxasAduaneiras, freteInternacional, taxaEnvioLocal, calcularRevenda, margemLucro, custosAdicionais, moeda, taxaCambio, aplicarMargemSeguranca, destinoEntrega, taxaEntregaCBM, destinoRodoviario, activeCoupon, calcMode, veiculoResults, importType]);
 
   // --- Handlers ---
 
@@ -2542,6 +2575,34 @@ function AppContent() {
           </button>
         </div>
 
+        {calcMode === 'geral' && (
+          <div className="bg-slate-50 p-2 rounded-2xl flex flex-col sm:flex-row gap-2 border border-slate-200/80 shadow-inner max-w-2xl mx-auto mt-4">
+            <button
+              type="button"
+              onClick={() => setImportType('grupagem')}
+              className={`flex-1 py-2.5 px-4 rounded-xl font-bold text-[11px] uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${
+                importType === 'grupagem' 
+                  ? 'bg-emerald-600 text-white shadow-md' 
+                  : 'text-slate-600 hover:bg-slate-200/60'
+              }`}
+            >
+              <Users size={14} /> Grupagem PrimeWay (Sem Burocracia)
+            </button>
+            <button
+              type="button"
+              onClick={() => setImportType('oficial')}
+              className={`flex-1 py-2.5 px-4 rounded-xl font-bold text-[11px] uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${
+                importType === 'oficial' 
+                  ? 'bg-slate-800 text-white shadow-md' 
+                  : 'text-slate-600 hover:bg-slate-200/60'
+              }`}
+              title="Para pagamento via Banco com termo de compromisso e DU próprio"
+            >
+              <Landmark size={14} /> Despacho Oficial (Processo Bancário)
+            </button>
+          </div>
+        )}
+
         {calcMode === 'veiculos' && (
           <div className="bg-gradient-to-r from-blue-950 via-slate-900 to-corp-blue text-white p-5 rounded-2xl shadow-lg border border-blue-500/30 flex flex-col sm:flex-row items-center justify-between gap-4 max-w-5xl mx-auto">
             <div className="flex items-center gap-4">
@@ -2621,24 +2682,38 @@ function AppContent() {
                 )}
                 {calcMode === 'geral' && (
                   <>
-                    <div>
-                      <label className="label-corp">Taxa Proc. %</label>
-                      <input 
-                        type="number" step="any"
-                        value={taxaProcessamento || ''} 
-                        onChange={(e) => setTaxaProcessamento(e.target.value)}
-                        className="input-modern !py-2.5 !px-3 text-xs" 
-                      />
-                    </div>
-                    <div>
-                      <label className="label-corp">Comissão %</label>
-                      <input 
-                        type="number" step="any"
-                        value={comissaoServicos || ''} 
-                        onChange={(e) => setComissaoServicos(e.target.value)}
-                        className="input-modern !py-2.5 !px-3 text-xs" 
-                      />
-                    </div>
+                    {importType === 'oficial' ? (
+                      <div>
+                        <label className="label-corp">Honorários</label>
+                        <input 
+                          type="number" step="any"
+                          value={honorariosAgenciamento || ''} 
+                          onChange={(e) => setHonorariosAgenciamento(e.target.value)}
+                          className="input-modern !py-2.5 !px-3 text-xs" 
+                        />
+                      </div>
+                    ) : (
+                      <div>
+                        <label className="label-corp">Taxa Proc. %</label>
+                        <input 
+                          type="number" step="any"
+                          value={taxaProcessamento || ''} 
+                          onChange={(e) => setTaxaProcessamento(e.target.value)}
+                          className="input-modern !py-2.5 !px-3 text-xs" 
+                        />
+                      </div>
+                    )}
+                    {importType !== 'oficial' && (
+                      <div>
+                        <label className="label-corp">Comissão %</label>
+                        <input 
+                          type="number" step="any"
+                          value={comissaoServicos || ''} 
+                          onChange={(e) => setComissaoServicos(e.target.value)}
+                          className="input-modern !py-2.5 !px-3 text-xs" 
+                        />
+                      </div>
+                    )}
                     <div>
                       <label className="label-corp">Armazém</label>
                       <input 
@@ -3549,15 +3624,38 @@ function AppContent() {
                 )}
                 {tipoTransporte === 'maritimo' && (
                   <>
-                    <div>
-                      <label className="label-corp">Despacho</label>
-                      <input 
-                        type="number" step="any"
-                        value={taxasAduaneiras || ''} 
-                        onChange={(e) => setTaxasAduaneiras(e.target.value)}
-                        className="input-modern !py-2.5 !px-3 text-xs" 
-                      />
-                    </div>
+                    {importType === 'oficial' ? (
+                      <>
+                        <div>
+                          <label className="label-corp">Direitos Aduaneiros (%)</label>
+                          <input 
+                            type="number" step="any"
+                            value={taxasAduaneiras || ''} 
+                            onChange={(e) => setTaxasAduaneiras(e.target.value)}
+                            className="input-modern !py-2.5 !px-3 text-xs" 
+                          />
+                        </div>
+                        <div>
+                          <label className="label-corp">Taxas Portuárias (Fixo)</label>
+                          <input 
+                            type="number" step="any"
+                            value={taxasPortuarias || ''} 
+                            onChange={(e) => setTaxasPortuarias(e.target.value)}
+                            className="input-modern !py-2.5 !px-3 text-xs" 
+                          />
+                        </div>
+                      </>
+                    ) : (
+                      <div>
+                        <label className="label-corp">Despacho (CBM/Kg)</label>
+                        <input 
+                          type="number" step="any"
+                          value={taxasAduaneiras || ''} 
+                          onChange={(e) => setTaxasAduaneiras(e.target.value)}
+                          className="input-modern !py-2.5 !px-3 text-xs" 
+                        />
+                      </div>
+                    )}
                     <div>
                       <label className="label-corp">Frete Int.</label>
                       <input 
@@ -5774,10 +5872,23 @@ function AppContent() {
                       <span>Frete Internacional Marítimo:</span>
                       <span className="font-bold text-[#0f172a]">{moeda} {formatoMoeda(results.valorFreteInt)}</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span>Despacho Aduaneiro:</span>
-                      <span className="font-bold text-[#0f172a]">{moeda} {formatoMoeda(results.valorDespacho)}</span>
-                    </div>
+                    {importType === 'oficial' ? (
+                      <>
+                        <div className="flex justify-between">
+                          <span>Simulação Pagamentos na Alfândega:</span>
+                          <span className="font-bold text-[#0f172a]">{moeda} {formatoMoeda(results.valorDespacho)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Honorários Agenciamento PrimeWay:</span>
+                          <span className="font-bold text-[#0f172a]">{moeda} {formatoMoeda(Number(honorariosAgenciamento) || 0)}</span>
+                        </div>
+                      </>
+                    ) : (
+                      <div className="flex justify-between">
+                        <span>Despacho Aduaneiro:</span>
+                        <span className="font-bold text-[#0f172a]">{moeda} {formatoMoeda(results.valorDespacho)}</span>
+                      </div>
+                    )}
                     {results.valorEnvioLocal > 0 && (
                       <div className="flex justify-between">
                         <span>Taxa de Envio Local:</span>
@@ -5806,12 +5917,44 @@ function AppContent() {
                   </div>
                 )}
               </div>
-              <div className="bg-[#1A284F] text-[#ffffff] p-6 rounded-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 sm:gap-4 overflow-hidden">
-                <span className="font-bold uppercase tracking-widest text-xs">
-                  {results.valorDesconto > 0 ? 'Total Estimado com Desconto' : 'Total Estimado'}
-                </span>
-                <span className="text-2xl sm:text-3xl font-black tracking-tight break-all sm:break-words">{moeda} {formatoMoeda(results.totalFinal)}</span>
-              </div>
+              {importType === 'oficial' ? (
+                <div className="space-y-4">
+                  <div className="bg-slate-50 border border-slate-200 text-slate-800 p-5 rounded-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 sm:gap-4 overflow-hidden">
+                    <div>
+                      <span className="font-bold uppercase tracking-widest text-xs block mb-1">Valor da Mercadoria (FOB)</span>
+                      <span className="text-[10px] text-slate-500 block">A pagar diretamente ao fornecedor via Banco (Termo de Compromisso)</span>
+                    </div>
+                    <span className="text-xl font-black tracking-tight break-all sm:break-words">
+                      {moeda} {formatoMoeda(results.subtotalProdutos)}
+                    </span>
+                  </div>
+                  <div className="bg-[#1A284F] text-[#ffffff] p-5 rounded-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 sm:gap-4 overflow-hidden">
+                    <div>
+                      <span className="font-bold uppercase tracking-widest text-xs block mb-1">Total a Pagar à PrimeWay</span>
+                      <span className="text-[10px] text-white/70 block">Frete Internacional, Honorários, Armazém e Envios Locais</span>
+                    </div>
+                    <span className="text-2xl sm:text-3xl font-black tracking-tight break-all sm:break-words">
+                      {moeda} {formatoMoeda(results.valorFreteInt + (Number(honorariosAgenciamento) || 0) + results.taxaLevantamento + results.valorEnvioLocal - results.valorDesconto)}
+                    </span>
+                  </div>
+                  <div className="bg-amber-50 border border-amber-200 text-amber-900 p-5 rounded-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 sm:gap-4 overflow-hidden">
+                    <div>
+                      <span className="font-bold uppercase tracking-widest text-xs block mb-1">Estimativa de Despacho (Destino)</span>
+                      <span className="text-[10px] text-amber-700 block">Direitos Aduaneiros ({Number(taxasAduaneiras) || 0}%), IVA (16%) e Taxas Portuárias (para fechar o DU)</span>
+                    </div>
+                    <span className="text-xl font-black tracking-tight break-all sm:break-words">
+                      {moeda} {formatoMoeda(results.valorDespacho)}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-[#1A284F] text-[#ffffff] p-6 rounded-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 sm:gap-4 overflow-hidden">
+                  <span className="font-bold uppercase tracking-widest text-xs">
+                    {results.valorDesconto > 0 ? 'Total Estimado com Desconto' : 'Total Estimado (Carga + Envio)'}
+                  </span>
+                  <span className="text-2xl sm:text-3xl font-black tracking-tight break-all sm:break-words">{moeda} {formatoMoeda(results.totalFinal)}</span>
+                </div>
+              )}
             </div>
           </div>
         </>
