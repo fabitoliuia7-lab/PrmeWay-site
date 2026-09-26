@@ -127,5 +127,10 @@ service cloud.firestore {
       allow update: if isDocOwner() && isValidDebitNote(request.resource.data) && isAdmin();
       allow delete: if isDocOwner() || isAdmin();
     }
+
+    match /pauta_itens/{itemId} {
+      allow read: if true;
+      allow write: if true;
+    }
   }
 }

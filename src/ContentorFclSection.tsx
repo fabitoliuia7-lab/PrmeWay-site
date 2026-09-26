@@ -17,7 +17,8 @@ import {
   Plus,
   Trash2,
   Copy,
-  Info
+  Info,
+  Sparkles
 } from 'lucide-react';
 import {
   ContentorItem,
@@ -25,6 +26,8 @@ import {
   CONTENTOR_SPECS,
   ContentorType
 } from './contentorTypes';
+import { PautaLookupWidget } from './PautaLookupWidget';
+import { obterTaxasPauta } from './pautaAduaneira';
 
 interface ContentorFclSectionProps {
   contentoresList: ContentorItem[];
@@ -70,6 +73,24 @@ export const ContentorFclSection: React.FC<ContentorFclSectionProps> = ({
     atualizarContentorField(currentContentor.id, 'direitosPerc', percentual);
     if (!currentContentor.codigoPautal || currentContentor.codigoPautal === '8482.10.00' || currentContentor.codigoPautal === 'Geral') {
       atualizarContentorField(currentContentor.id, 'codigoPautal', codigoDesc);
+    }
+  };
+
+  const aplicarTarifaPautaCompleta = (tarifa: {
+    codigo: string;
+    descricao: string;
+    direitosPerc: number;
+    icePerc: number;
+    ivaPerc: number;
+    categoria?: string;
+    notas?: string;
+  }) => {
+    atualizarContentorField(currentContentor.id, 'codigoPautal', tarifa.codigo);
+    atualizarContentorField(currentContentor.id, 'direitosPerc', tarifa.direitosPerc);
+    atualizarContentorField(currentContentor.id, 'icePerc', tarifa.icePerc);
+    atualizarContentorField(currentContentor.id, 'ivaPerc', tarifa.ivaPerc);
+    if (!currentContentor.descricaoCarga || currentContentor.descricaoCarga.trim() === '') {
+      atualizarContentorField(currentContentor.id, 'descricaoCarga', tarifa.descricao);
     }
   };
 
@@ -226,13 +247,37 @@ export const ContentorFclSection: React.FC<ContentorFclSectionProps> = ({
         {/* Inputs Básicos do Contentor */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
           <div className="sm:col-span-2">
-            <label className="label-corp">Descrição da Mercadoria / Carga</label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="label-corp !mb-0">Descrição da Mercadoria / Carga</label>
+              <button
+                type="button"
+                onClick={() => {
+                  const query = currentContentor.descricaoCarga || currentContentor.codigoPautal;
+                  if (query) {
+                    const res = obterTaxasPauta(query);
+                    aplicarTarifaPautaCompleta(res);
+                  }
+                }}
+                className="text-[9px] font-bold text-corp-blue hover:text-corp-blue-light flex items-center gap-1 cursor-pointer bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded border border-blue-200 transition-colors"
+                title="Puxar código e taxas da Pauta Aduaneira automaticamente"
+              >
+                <Sparkles size={10} className="text-amber-500 animate-pulse" /> Puxar da Pauta
+              </button>
+            </div>
             <input
               type="text"
               value={currentContentor.descricaoCarga}
               onChange={(e) => atualizarContentorField(currentContentor.id, 'descricaoCarga', e.target.value)}
+              onBlur={() => {
+                if (currentContentor.descricaoCarga && currentContentor.descricaoCarga.trim().length >= 3) {
+                  const res = obterTaxasPauta(currentContentor.descricaoCarga);
+                  if (res.encontrado) {
+                    aplicarTarifaPautaCompleta(res);
+                  }
+                }
+              }}
               className="input-modern"
-              placeholder="Ex: Rolamentos Industriais, Materiais de Construção, Mobiliário..."
+              placeholder="Ex: Rolamentos Industriais, Geradores, Painéis Solares, Camião..."
             />
           </div>
 
@@ -250,13 +295,48 @@ export const ContentorFclSection: React.FC<ContentorFclSectionProps> = ({
           </div>
 
           <div>
-            <label className="label-corp">Código Pautal / HS Code</label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="label-corp !mb-0">Código Pautal / HS Code</label>
+              <button
+                type="button"
+                onClick={() => {
+                  const query = currentContentor.codigoPautal || currentContentor.descricaoCarga;
+                  if (query) {
+                    const res = obterTaxasPauta(query);
+                    aplicarTarifaPautaCompleta(res);
+                  }
+                }}
+                className="text-[9px] font-bold text-amber-700 hover:text-amber-800 flex items-center gap-1 cursor-pointer bg-amber-50 hover:bg-amber-100 px-2 py-0.5 rounded border border-amber-300 transition-colors"
+                title="Auto-detectar taxas da pauta para este código ou descrição"
+              >
+                <Sparkles size={10} className="text-amber-500" /> Auto-Taxas
+              </button>
+            </div>
             <input
               type="text"
               value={currentContentor.codigoPautal}
-              onChange={(e) => atualizarContentorField(currentContentor.id, 'codigoPautal', e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                atualizarContentorField(currentContentor.id, 'codigoPautal', val);
+                if (val && val.trim().length >= 4) {
+                  const res = obterTaxasPauta(val);
+                  if (res.encontrado) {
+                    atualizarContentorField(currentContentor.id, 'direitosPerc', res.direitosPerc);
+                    atualizarContentorField(currentContentor.id, 'icePerc', res.icePerc);
+                    atualizarContentorField(currentContentor.id, 'ivaPerc', res.ivaPerc);
+                  }
+                }
+              }}
+              onBlur={() => {
+                if (currentContentor.codigoPautal && currentContentor.codigoPautal.trim().length >= 3) {
+                  const res = obterTaxasPauta(currentContentor.codigoPautal);
+                  if (res.encontrado) {
+                    aplicarTarifaPautaCompleta(res);
+                  }
+                }
+              }}
               className="input-modern"
-              placeholder="Ex: 8482.10.00"
+              placeholder="Ex: 8482.10.00 ou 8502"
             />
           </div>
 
@@ -438,64 +518,17 @@ export const ContentorFclSection: React.FC<ContentorFclSectionProps> = ({
           )}
         </div>
 
-        {/* Seletor Rápido da Pauta Aduaneira */}
-        <div className="mb-6 bg-slate-50 p-4 rounded-xl border border-slate-200">
-          <label className="label-corp mb-2 block">
-            Classificação Pautal Moçambicana (Selecione a categoria para auto-preencher os Direitos Aduaneiros):
-          </label>
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-            <button
-              type="button"
-              onClick={() => aplicarTarifaPauta(0, 'Isento - Pauta 0%')}
-              className={`p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
-                Number(currentContentor.direitosPerc) === 0
-                  ? 'bg-amber-500 text-white border-amber-600 font-bold shadow-sm'
-                  : 'bg-white hover:bg-slate-100 border-slate-200 text-slate-700'
-              }`}
-            >
-              <p className="text-xs font-bold">0% - Isento</p>
-              <p className="text-[9px] opacity-80">Livros, fármacos, insumos agrícolas</p>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => aplicarTarifaPauta(5, '8482.10 - Bens de Capital / Máquinas')}
-              className={`p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
-                Number(currentContentor.direitosPerc) === 5
-                  ? 'bg-amber-500 text-white border-amber-600 font-bold shadow-sm'
-                  : 'bg-white hover:bg-slate-100 border-slate-200 text-slate-700'
-              }`}
-            >
-              <p className="text-xs font-bold">5% - Bens de Capital</p>
-              <p className="text-[9px] opacity-80">Máquinas, rolamentos industriais, tratores</p>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => aplicarTarifaPauta(7.5, 'Bens Intermédios / Matérias')}
-              className={`p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
-                Number(currentContentor.direitosPerc) === 7.5
-                  ? 'bg-amber-500 text-white border-amber-600 font-bold shadow-sm'
-                  : 'bg-white hover:bg-slate-100 border-slate-200 text-slate-700'
-              }`}
-            >
-              <p className="text-xs font-bold">7.5% - Intermédios</p>
-              <p className="text-[9px] opacity-80">Matérias-primas e peças de produção</p>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => aplicarTarifaPauta(20, 'Bens de Consumo Final')}
-              className={`p-2.5 rounded-lg border text-left transition-all cursor-pointer ${
-                Number(currentContentor.direitosPerc) === 20
-                  ? 'bg-amber-500 text-white border-amber-600 font-bold shadow-sm'
-                  : 'bg-white hover:bg-slate-100 border-slate-200 text-slate-700'
-              }`}
-            >
-              <p className="text-xs font-bold">20% - Bens de Consumo</p>
-              <p className="text-[9px] opacity-80">Consumo geral, vestuário, mobiliário</p>
-            </button>
-          </div>
+        {/* Consulta & Automação da Pauta Aduaneira de Moçambique */}
+        <div className="mb-6">
+          <PautaLookupWidget
+            codigoAtual={currentContentor.codigoPautal}
+            descricaoAtual={currentContentor.descricaoCarga}
+            direitosAtual={currentContentor.direitosPerc}
+            iceAtual={currentContentor.icePerc}
+            ivaAtual={currentContentor.ivaPerc}
+            onSelectTarifa={aplicarTarifaPautaCompleta}
+            modo="contentor"
+          />
         </div>
 
         {/* Inputs de Impostos */}

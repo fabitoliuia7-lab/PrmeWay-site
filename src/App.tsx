@@ -86,6 +86,8 @@ import { toJpeg } from 'html-to-image';
 import { jsPDF } from 'jspdf';
 import { logoBase64 } from './logoBase64';
 import { SourcingModule } from './sourcing/SourcingModule';
+import { AuthModal, AuthTab } from './AuthModal';
+import { UserProfileModal } from './UserProfileModal';
 
 // --- Error Handling ---
 
@@ -453,6 +455,34 @@ function AppContent() {
 
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const isAdmin = user?.email === 'fabitoliuia7@gmail.com' || user?.email === 'comercial@primewayinvest.com';
+  
+  // --- Auth Modal & Profile Management States ---
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [authModalTab, setAuthModalTab] = useState<AuthTab>('login');
+  const [resetOobCode, setResetOobCode] = useState<string | null>(null);
+  const [isProfileModalOpen, setIsProfileModalOpen] = useState(false);
+
+  const handleOpenAuth = (tab: AuthTab = 'login') => {
+    setAuthModalTab(tab);
+    setIsAuthModalOpen(true);
+  };
+
+  // Detect resetPassword action code from email links
+  useEffect(() => {
+    try {
+      const urlParams = new URLSearchParams(window.location.search);
+      const hashParams = new URLSearchParams(window.location.hash.substring(1));
+      const mode = urlParams.get('mode') || hashParams.get('mode');
+      const oobCode = urlParams.get('oobCode') || hashParams.get('oobCode');
+      if (mode === 'resetPassword' && oobCode) {
+        setResetOobCode(oobCode);
+        setAuthModalTab('resetPassword');
+        setIsAuthModalOpen(true);
+      }
+    } catch (e) {
+      console.warn('Erro ao processar parâmetros de recuperação:', e);
+    }
+  }, []);
   
   const [lessons, setLessons] = useState<Lesson[]>([
     { id: '1', title: "Introdução à Importação", duration: "12:45", youtubeId: "iBY6EDSjEF4", description: "Esta é a aula inaugural do nosso curso de importação. Aqui, você aprenderá os passos fundamentais para realizar suas primeiras negociações com fornecedores internacionais, entender os modais de transporte e prever custos ocultos.", course: "Curso Inicial de Importação", module: "Módulo 1", level: "Iniciante" },
@@ -1067,13 +1097,8 @@ function AppContent() {
     };
   }, [user, isAuthReady]);
 
-  const handleLogin = async () => {
-    try {
-      const provider = new GoogleAuthProvider();
-      await signInWithPopup(auth, provider);
-    } catch (error) {
-      console.error("Login error", error);
-    }
+  const handleLogin = () => {
+    handleOpenAuth('login');
   };
 
   const handleLogout = async () => {
@@ -2172,6 +2197,7 @@ function AppContent() {
           </button>
           
           <div className="hidden md:flex items-center gap-8">
+            {/* Navigation links */}
             {['Início', 'A Empresa', 'Serviços', 'Calculadora Proforma', 'Sourcing China-MZ', 'Cursos', 'Rastreio'].map((item) => {
               const isCursosTab = item === 'Cursos';
               const isSourcingTab = item === 'Sourcing China-MZ';
@@ -2196,16 +2222,6 @@ function AppContent() {
                 </button>
               );
             })}
-
-            {/* Install PWA Button in Navbar */}
-            <button 
-              onClick={handleInstallClick}
-              className="flex items-center gap-1.5 text-xs font-bold text-corp-blue bg-blue-50/80 hover:bg-blue-100/80 px-3 py-2 rounded-lg transition-colors"
-              title="Instalar PrimeWay no Computador ou Telemóvel"
-            >
-              <Smartphone size={15} className="text-corp-blue" />
-              <span>Instalar App</span>
-            </button>
             
             {isAuthReady && (
               user ? (
@@ -2223,37 +2239,44 @@ function AppContent() {
                     )}
                   </button>
                   <div className="flex items-center gap-2 pl-4 border-l border-slate-200">
-                    <img src={user.photoURL || ''} alt={user.displayName || ''} className="w-8 h-8 rounded-full border border-slate-200" />
-                    <button onClick={handleLogout} className="text-slate-400 hover:text-red-500 transition-colors">
+                    <button
+                      onClick={() => setIsProfileModalOpen(true)}
+                      className="flex items-center gap-2.5 text-left hover:opacity-80 transition-opacity group"
+                      title="Gerir Perfil e Conta"
+                    >
+                      {user.photoURL ? (
+                        <img src={user.photoURL} alt={user.displayName || 'Utilizador'} className="w-8 h-8 rounded-full border border-slate-200 object-cover shadow-sm" />
+                      ) : (
+                        <div className="w-8 h-8 rounded-full bg-corp-blue text-white flex items-center justify-center text-xs font-bold shadow-sm">
+                          {(user.displayName || user.email || 'PW').slice(0, 2).toUpperCase()}
+                        </div>
+                      )}
+                      <div className="hidden xl:block max-w-[130px]">
+                        <p className="text-xs font-bold text-slate-800 truncate leading-none group-hover:text-corp-blue transition-colors">
+                          {user.displayName || user.email?.split('@')[0]}
+                        </p>
+                        <p className="text-[10px] text-slate-400 font-medium truncate leading-tight mt-0.5">
+                          {isAdmin ? 'Administrador' : 'Minha Conta'}
+                        </p>
+                      </div>
+                    </button>
+                    <button onClick={handleLogout} className="text-slate-400 hover:text-red-500 transition-colors p-1" title="Terminar Sessão">
                       <LogOut size={18} />
                     </button>
                   </div>
                 </div>
               ) : (
                 <button 
-                  onClick={handleLogin}
+                  onClick={() => handleOpenAuth('login')}
                   className="flex items-center gap-2 text-xs font-bold text-corp-blue uppercase tracking-widest hover:text-corp-blue-light transition-colors"
                 >
                   <LogIn size={18} /> Entrar
                 </button>
               )
             )}
-
-            <button 
-              onClick={() => navigateTo('landing', 'simulador')}
-              className="btn-modern-primary !py-3 !px-6 !text-[11px]"
-            >
-              Calculadora Proforma
-            </button>
           </div>
 
           <div className="md:hidden flex items-center gap-3">
-            <button 
-              onClick={handleInstallClick}
-              className="flex items-center gap-1 text-[11px] font-bold text-corp-blue bg-blue-50 px-2.5 py-1.5 rounded-lg"
-            >
-              <Smartphone size={14} /> App
-            </button>
             <button className="text-corp-blue p-1" onClick={() => setIsMenuOpen(!isMenuOpen)}>
               {isMenuOpen ? <X size={24} /> : <Menu size={24} />}
             </button>
@@ -2298,28 +2321,26 @@ function AppContent() {
                 );
               })}
 
-              <button 
-                onClick={() => {
-                  setIsMenuOpen(false);
-                  handleInstallClick();
-                }}
-                className="flex items-center justify-between text-left text-sm font-bold text-corp-blue bg-blue-50/70 p-3 rounded-xl uppercase tracking-wider"
-              >
-                <span className="flex items-center gap-2">
-                  <Smartphone size={18} className="text-corp-blue" />
-                  Instalar App PrimeWay
-                </span>
-                <span className="text-[10px] bg-corp-blue text-white px-2 py-0.5 rounded-full font-sans">PWA</span>
-              </button>
-
               {isAuthReady && (
                 user ? (
                   <div className="flex flex-col gap-4 py-4 border-t border-slate-100">
-                    <div className="flex items-center gap-3">
-                      <img src={user.photoURL || ''} alt={user.displayName || ''} className="w-10 h-10 rounded-full border border-slate-200" />
+                    <div 
+                      onClick={() => {
+                        setIsProfileModalOpen(true);
+                        setIsMenuOpen(false);
+                      }}
+                      className="flex items-center gap-3 cursor-pointer p-1 rounded-xl hover:bg-slate-50 transition-colors"
+                    >
+                      {user.photoURL ? (
+                        <img src={user.photoURL} alt={user.displayName || ''} className="w-10 h-10 rounded-full border border-slate-200 object-cover" />
+                      ) : (
+                        <div className="w-10 h-10 rounded-full bg-corp-blue text-white flex items-center justify-center text-sm font-bold">
+                          {(user.displayName || user.email || 'PW').slice(0, 2).toUpperCase()}
+                        </div>
+                      )}
                       <div className="flex flex-col">
-                        <span className="text-sm font-bold text-slate-900">{user.displayName}</span>
-                        <span className="text-xs text-slate-500">{user.email}</span>
+                        <span className="text-sm font-bold text-slate-900">{user.displayName || user.email?.split('@')[0]}</span>
+                        <span className="text-xs text-slate-500">{isAdmin ? 'Administrador' : 'Minha Conta'}</span>
                       </div>
                     </div>
                     <button 
@@ -2329,7 +2350,7 @@ function AppContent() {
                       }}
                       className="flex items-center gap-3 text-sm font-semibold text-slate-600 uppercase tracking-widest"
                     >
-                      <History size={20} /> Histórico
+                      <History size={20} /> Histórico de Cotações
                     </button>
                     <button 
                       onClick={() => {
@@ -2338,28 +2359,21 @@ function AppContent() {
                       }}
                       className="flex items-center gap-3 text-sm font-semibold text-red-500 uppercase tracking-widest"
                     >
-                      <LogOut size={20} /> Sair
+                      <LogOut size={20} /> Terminar Sessão
                     </button>
                   </div>
                 ) : (
                   <button 
                     onClick={() => {
-                      handleLogin();
+                      handleOpenAuth('login');
                       setIsMenuOpen(false);
                     }}
                     className="flex items-center gap-3 text-sm font-bold text-corp-blue uppercase tracking-widest py-4 border-t border-slate-100"
                   >
-                    <LogIn size={20} /> Entrar com Google
+                    <LogIn size={20} /> Entrar
                   </button>
                 )
               )}
-
-              <button 
-                onClick={() => navigateTo('landing', 'simulador')}
-                className="bg-corp-accent text-white text-sm font-semibold px-6 py-4 uppercase tracking-widest text-center rounded-sm w-full"
-              >
-                Calculadora Proforma
-              </button>
             </motion.div>
           )}
         </AnimatePresence>
@@ -5658,6 +5672,29 @@ function AppContent() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Auth Modal (Login / Criar Conta / Recuperar Senha) */}
+      <AuthModal
+        isOpen={isAuthModalOpen}
+        onClose={() => {
+          setIsAuthModalOpen(false);
+          setResetOobCode(null);
+        }}
+        currentUser={user}
+        initialTab={authModalTab}
+        resetCode={resetOobCode}
+        onOpenLegalTerms={(termType) => setShowLegal(legalTerms[termType])}
+      />
+
+      {/* User Profile / Account Modal */}
+      <UserProfileModal
+        isOpen={isProfileModalOpen}
+        onClose={() => setIsProfileModalOpen(false)}
+        user={user}
+        isAdmin={isAdmin}
+        quotesCount={savedQuotes.length}
+        onOpenHistory={() => setShowHistory(true)}
+      />
 
       {/* --- Print Area --- */}
       <div id="invoice-print-area" className="hidden bg-[#ffffff] font-sans text-[#000000] fixed top-0 left-0 w-[1024px] z-[-50]">
