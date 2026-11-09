@@ -12,7 +12,8 @@
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
     "test:security": "tsx --test tests/api.security.test.ts",
-    "test:rules": "tsx --test tests/firestore.security.test.ts"
+    "test:rules": "tsx --test tests/firestore.security.test.ts",
+    "test:design": "tsx --test tests/corporate.design.test.ts"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",

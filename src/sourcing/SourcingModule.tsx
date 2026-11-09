@@ -430,7 +430,7 @@ export const SourcingModule: React.FC<SourcingModuleProps> = ({
       </div>
 
       {/* Main Sourcing Content Area */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
+      <main id="conteudo-principal" tabIndex={-1} className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
         {activeTab === 'dashboard' && (
           <DashboardView
             suppliers={data.suppliers}

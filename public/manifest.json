@@ -35,14 +35,14 @@
       "name": "Rastrear Carga",
       "short_name": "Rastreio",
       "description": "Rastreie suas encomendas em tempo real",
-      "url": "/#tracking",
+      "url": "/#rastreio",
       "icons": [{ "src": "/IMG-20260215-WA0003.jpg", "sizes": "192x192" }]
     },
     {
       "name": "Calcular Frete",
       "short_name": "Cotação",
       "description": "Calcule frete marítimo, aéreo ou rodoviário",
-      "url": "/#calculator",
+      "url": "/#simulador",
       "icons": [{ "src": "/IMG-20260215-WA0003.jpg", "sizes": "192x192" }]
     }
   ]

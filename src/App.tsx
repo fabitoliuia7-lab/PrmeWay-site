@@ -47,7 +47,8 @@ import {
   Sparkles,
   Users,
   Landmark,
-  Boxes
+  Boxes,
+  MessageCircle
 } from 'lucide-react';
 import { 
   ContentorItem, 
@@ -89,6 +90,11 @@ import { logoBase64 } from './logoBase64';
 import { SourcingModule } from './sourcing/SourcingModule';
 import { AuthModal, AuthTab } from './AuthModal';
 import { UserProfileModal } from './UserProfileModal';
+import { CorporateHeader } from './corporate/CorporateHeader';
+import { CorporateLanding } from './corporate/CorporateLanding';
+import { CorporateFooter } from './corporate/CorporateFooter';
+import { QUOTATION_URL, resolveSiteView, siteViewFromHash, type SiteView } from './corporate/types';
+import './corporate/corporate.css';
 
 // --- Error Handling ---
 
@@ -436,23 +442,46 @@ interface Lesson {
 }
 
 function AppContent() {
-  const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const [activeView, setActiveView] = useState<'landing' | 'cursos' | 'sourcing'>('landing');
+  const [activeView, setActiveView] = useState<SiteView>(() => siteViewFromHash(window.location.hash));
 
-  const navigateTo = (view: 'landing' | 'cursos' | 'sourcing', id?: string) => {
-    setActiveView(view);
-    setIsMenuOpen(false);
-    if (view === 'cursos' || view === 'sourcing') {
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-    } else if (id) {
-      setTimeout(() => {
-        const element = document.getElementById(id);
-        if (element) {
-          element.scrollIntoView({ behavior: 'smooth' });
-        }
-      }, 100);
+  const scrollToView = (view: SiteView, section?: string) => {
+    const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const behavior: ScrollBehavior = reducedMotion ? 'auto' : 'smooth';
+    if (view === 'landing' && section && section !== 'inicio') {
+      setTimeout(() => document.getElementById(section)?.scrollIntoView({ behavior }), 80);
+    } else {
+      window.scrollTo({ top: 0, behavior });
     }
   };
+
+  const navigateTo = (view: SiteView, section?: string) => {
+    const nextView = resolveSiteView(view, section);
+    setActiveView(nextView);
+    const hash = nextView === 'landing' ? (section && section !== 'inicio' ? `#${section}` : '') : `#${nextView}`;
+    const destination = `${window.location.pathname}${window.location.search}${hash}`;
+    if (`${window.location.pathname}${window.location.search}${window.location.hash}` !== destination) {
+      window.history.pushState(null, '', destination);
+    }
+    scrollToView(nextView, section);
+  };
+
+  useEffect(() => {
+    const restoreView = () => {
+      const view = siteViewFromHash(window.location.hash);
+      setActiveView(view);
+      let section = window.location.hash.replace(/^#/, '');
+      try { section = decodeURIComponent(section); } catch { /* Keep a malformed hash harmless. */ }
+      scrollToView(view, section);
+    };
+    window.addEventListener('popstate', restoreView);
+    window.addEventListener('hashchange', restoreView);
+    const initialTimer = window.setTimeout(restoreView, 120);
+    return () => {
+      window.clearTimeout(initialTimer);
+      window.removeEventListener('popstate', restoreView);
+      window.removeEventListener('hashchange', restoreView);
+    };
+  }, []);
 
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -2139,7 +2168,13 @@ function AppContent() {
   };
 
   return (
-    <div className="min-h-screen flex flex-col">
+    <div className="pw-site min-h-screen flex flex-col">
+      <a className="pw-skip no-print" href="#conteudo-principal" onClick={event => {
+        event.preventDefault();
+        const content = document.getElementById('conteudo-principal');
+        content?.focus();
+        content?.scrollIntoView({ behavior: 'auto' });
+      }}>Saltar para o conteúdo</a>
       {/* Offline Status Warning Bar */}
       {!isOnline && (
         <div className="bg-amber-500 text-slate-950 text-xs font-bold py-2.5 px-4 text-center sticky top-0 z-50 flex items-center justify-center gap-2 shadow-md">
@@ -2148,249 +2183,23 @@ function AppContent() {
         </div>
       )}
 
-      {/* WhatsApp Button */}
-      <a 
-        href="https://wa.me/258842914655?text=Olá,%20gostaria%20de%20saber%20mais%20sobre%20os%20serviços%20da%20PrimeWay!" 
-        target="_blank" 
-        rel="noreferrer"
-        className="fixed bottom-8 right-8 bg-[#25D366] text-white w-14 h-14 rounded-full flex items-center justify-center shadow-2xl z-50 hover:scale-110 transition-transform no-print"
-        title="Fale connosco no WhatsApp"
-      >
-        <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" fill="currentColor" viewBox="0 0 16 16">
-          <path d="M13.601 2.326A7.854 7.854 0 0 0 7.994 0C3.627 0 .068 3.558.064 7.926c0 1.399.366 2.76 1.057 3.965L0 16l4.204-1.102a7.933 7.933 0 0 0 3.79.965h.004c4.368 0 7.926-3.558 7.93-7.93A7.898 7.898 0 0 0 13.6 2.326zM7.994 14.521a6.573 6.573 0 0 1-3.356-.92l-.24-.144-2.494.654.666-2.433-.156-.251a6.56 6.56 0 0 1-1.007-3.505c0-3.626 2.957-6.584 6.591-6.584a6.56 6.56 0 0 1 4.66 1.931 6.557 6.557 0 0 1 1.928 4.66c-.004 3.639-2.961 6.592-6.592 6.592zm3.615-4.934c-.197-.099-1.17-.578-1.353-.646-.182-.065-.315-.099-.445.099-.133.197-.513.646-.627.775-.114.133-.232.148-.43.05-.197-.1-.836-.308-1.592-.985-.59-.525-.985-1.175-1.103-1.372-.114-.198-.011-.304.088-.403.087-.088.197-.232.296-.346.1-.114.133-.198.198-.33.065-.134.034-.248-.015-.347-.05-.099-.445-1.076-.612-1.47-.16-.389-.323-.335-.445-.34-.114-.004-.247-.007-.38-.007a.729.729 0 0 0-.529.247c-.182.198-.691.677-.691 1.654 0 .977.71 1.916.81 2.049.098.133 1.394 2.132 3.383 2.992.47.205.84.326 1.129.418.475.152.904.129 1.246.08.38-.058 1.171-.48 1.338-.943.164-.464.164-.86.114-.943-.049-.084-.182-.133-.38-.232z"/>
-        </svg>
+      <a href={QUOTATION_URL} target="_blank" rel="noopener noreferrer" className="pw-contact-float no-print" aria-label="Contactar a PrimeWay pelo WhatsApp">
+        <MessageCircle size={20} aria-hidden="true" /><span>Fale connosco</span>
       </a>
 
-      {/* Floating PWA Install Banner Button (if not already opened in standalone mode) */}
-      {!isStandalone && (
-        <div className="fixed bottom-6 left-6 z-40 no-print">
-          <button 
-            onClick={handleInstallClick}
-            className="flex items-center gap-2.5 bg-slate-900/95 hover:bg-slate-900 text-white px-4 py-2.5 rounded-full shadow-2xl border border-slate-700/80 backdrop-blur-md text-xs font-bold transition-all hover:scale-105 hover:border-corp-blue-light"
-          >
-            <div className="w-6 h-6 rounded-full bg-gradient-to-tr from-sky-400 to-blue-600 flex items-center justify-center text-white shrink-0">
-              <DownloadCloud size={13} />
-            </div>
-            <span className="hidden sm:inline">Instalar App PrimeWay</span>
-            <span className="sm:hidden">App Móvel</span>
-          </button>
-        </div>
-      )}
-
-      {/* Topbar */}
-      <div className="bg-corp-blue text-white py-2 px-6 hidden md:block no-print text-[10px] font-medium tracking-widest uppercase">
-        <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <div className="flex gap-6">
-            <span className="flex items-center gap-1.5"><Phone size={12} className="text-corp-orange" /> +258 84 291 4655</span>
-            <span className="flex items-center gap-1.5"><Mail size={12} className="text-corp-orange" /> comercial@primewayinvest.com</span>
-          </div>
-          <div className="flex items-center gap-6">
-            <button 
-              onClick={handleInstallClick}
-              className="flex items-center gap-1.5 text-sky-300 hover:text-white transition-colors cursor-pointer"
-            >
-              <Smartphone size={12} className="text-sky-300" />
-              <span>Instalar App (PWA)</span>
-            </button>
-            <span className="flex items-center gap-1.5"><MapPin size={12} className="text-corp-orange" /> Maputo, Moçambique</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Navigation */}
-      <nav className="bg-white/90 backdrop-blur-md border-b border-slate-200 py-5 px-6 sticky top-0 z-40 no-print">
-        <div className="max-w-7xl mx-auto flex justify-between items-center">
-          <button onClick={() => navigateTo('landing', 'inicio')} className="flex items-center gap-4 focus:outline-none">
-            <img 
-              src="https://files.manuscdn.com/user_upload_by_module/session_file/310419663028416962/glYQVTOtGErYGBoj.jpg" 
-              alt="PrimeWay Logo" 
-              className="h-12 w-auto object-contain transition-transform duration-300 hover:scale-105 hover:opacity-90 cursor-pointer"
-              referrerPolicy="no-referrer"
-            />
-          </button>
-          
-          <div className="hidden md:flex items-center gap-8">
-            {/* Navigation links */}
-            {['Início', 'A Empresa', 'Serviços', 'Calculadora Proforma', 'Sourcing China-MZ', 'Cursos', 'Rastreio'].map((item) => {
-              const isCursosTab = item === 'Cursos';
-              const isSourcingTab = item === 'Sourcing China-MZ';
-              const targetId = item === 'Calculadora Proforma' ? 'simulador' : item.toLowerCase().replace(' ', '-');
-              const isActive = (activeView === 'sourcing' && isSourcingTab) ||
-                               (activeView === 'cursos' && isCursosTab) || 
-                               (activeView === 'landing' && !isCursosTab && !isSourcingTab && (window.location.hash === `#${targetId}` || (targetId === 'simulador' && window.location.hash === '#simulador')));
-              return (
-                <button 
-                  key={item} 
-                  onClick={() => {
-                    if (isSourcingTab) navigateTo('sourcing');
-                    else if (isCursosTab) navigateTo('cursos');
-                    else navigateTo('landing', targetId);
-                  }}
-                  className={`text-xs font-semibold uppercase tracking-widest transition-colors focus:outline-none flex items-center gap-1.5 ${
-                    isActive ? 'text-corp-orange font-bold scale-102' : 'text-slate-600 hover:text-corp-blue'
-                  }`}
-                >
-                  {isSourcingTab && <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 inline-block animate-pulse" />}
-                  {item}
-                </button>
-              );
-            })}
-            
-            {isAuthReady && (
-              user ? (
-                <div className="flex items-center gap-4">
-                  <button 
-                    onClick={() => setShowHistory(!showHistory)}
-                    className="text-slate-600 hover:text-corp-blue transition-colors relative"
-                    title="Histórico de Cotações"
-                  >
-                    <History size={20} />
-                    {savedQuotes.length > 0 && (
-                      <span className="absolute -top-1 -right-1 bg-corp-orange text-white text-[8px] w-4 h-4 rounded-full flex items-center justify-center">
-                        {savedQuotes.length}
-                      </span>
-                    )}
-                  </button>
-                  <div className="flex items-center gap-2 pl-4 border-l border-slate-200">
-                    <button
-                      onClick={() => setIsProfileModalOpen(true)}
-                      className="flex items-center gap-2.5 text-left hover:opacity-80 transition-opacity group"
-                      title="Gerir Perfil e Conta"
-                    >
-                      {user.photoURL ? (
-                        <img src={user.photoURL} alt={user.displayName || 'Utilizador'} className="w-8 h-8 rounded-full border border-slate-200 object-cover shadow-sm" />
-                      ) : (
-                        <div className="w-8 h-8 rounded-full bg-corp-blue text-white flex items-center justify-center text-xs font-bold shadow-sm">
-                          {(user.displayName || user.email || 'PW').slice(0, 2).toUpperCase()}
-                        </div>
-                      )}
-                      <div className="hidden xl:block max-w-[130px]">
-                        <p className="text-xs font-bold text-slate-800 truncate leading-none group-hover:text-corp-blue transition-colors">
-                          {user.displayName || user.email?.split('@')[0]}
-                        </p>
-                        <p className="text-[10px] text-slate-400 font-medium truncate leading-tight mt-0.5">
-                          {isAdmin ? 'Administrador' : 'Minha Conta'}
-                        </p>
-                      </div>
-                    </button>
-                    <button onClick={handleLogout} className="text-slate-400 hover:text-red-500 transition-colors p-1" title="Terminar Sessão">
-                      <LogOut size={18} />
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <button 
-                  onClick={() => handleOpenAuth('login')}
-                  className="flex items-center gap-2 text-xs font-bold text-corp-blue uppercase tracking-widest hover:text-corp-blue-light transition-colors"
-                >
-                  <LogIn size={18} /> Entrar
-                </button>
-              )
-            )}
-          </div>
-
-          <div className="md:hidden flex items-center gap-3">
-            <button className="text-corp-blue p-1" onClick={() => setIsMenuOpen(!isMenuOpen)}>
-              {isMenuOpen ? <X size={24} /> : <Menu size={24} />}
-            </button>
-          </div>
-        </div>
-
-        {/* Mobile Menu */}
-        <AnimatePresence>
-          {isMenuOpen && (
-            <motion.div 
-              initial={{ opacity: 0, y: -20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="absolute top-full left-0 w-full bg-white border-b border-gray-200 p-6 flex flex-col gap-4 md:hidden shadow-xl"
-            >
-              {['Início', 'A Empresa', 'Serviços', 'Calculadora Proforma', 'Sourcing China-MZ', 'Cursos', 'Rastreio'].map((item) => {
-                const isCursosTab = item === 'Cursos';
-                const isSourcingTab = item === 'Sourcing China-MZ';
-                const targetId = item === 'Calculadora Proforma' ? 'simulador' : item.toLowerCase().replace(' ', '-');
-                const isActive = (activeView === 'sourcing' && isSourcingTab) || 
-                                 (activeView === 'cursos' && isCursosTab) || 
-                                 (activeView === 'landing' && !isCursosTab && !isSourcingTab && window.location.hash === `#${targetId}`);
-                return (
-                  <button 
-                    key={item} 
-                    onClick={() => {
-                      if (isSourcingTab) navigateTo('sourcing');
-                      else if (isCursosTab) navigateTo('cursos');
-                      else navigateTo('landing', targetId);
-                    }}
-                    className={`text-left text-sm font-semibold uppercase tracking-widest flex items-center justify-between ${
-                      isActive ? 'text-corp-orange font-bold' : 'text-corp-blue hover:text-corp-blue-light'
-                    }`}
-                  >
-                    <span>{item}</span>
-                    {isSourcingTab && (
-                      <span className="text-[9px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold">
-                        China ➔ MZ
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-
-              {isAuthReady && (
-                user ? (
-                  <div className="flex flex-col gap-4 py-4 border-t border-slate-100">
-                    <div 
-                      onClick={() => {
-                        setIsProfileModalOpen(true);
-                        setIsMenuOpen(false);
-                      }}
-                      className="flex items-center gap-3 cursor-pointer p-1 rounded-xl hover:bg-slate-50 transition-colors"
-                    >
-                      {user.photoURL ? (
-                        <img src={user.photoURL} alt={user.displayName || ''} className="w-10 h-10 rounded-full border border-slate-200 object-cover" />
-                      ) : (
-                        <div className="w-10 h-10 rounded-full bg-corp-blue text-white flex items-center justify-center text-sm font-bold">
-                          {(user.displayName || user.email || 'PW').slice(0, 2).toUpperCase()}
-                        </div>
-                      )}
-                      <div className="flex flex-col">
-                        <span className="text-sm font-bold text-slate-900">{user.displayName || user.email?.split('@')[0]}</span>
-                        <span className="text-xs text-slate-500">{isAdmin ? 'Administrador' : 'Minha Conta'}</span>
-                      </div>
-                    </div>
-                    <button 
-                      onClick={() => {
-                        setShowHistory(true);
-                        setIsMenuOpen(false);
-                      }}
-                      className="flex items-center gap-3 text-sm font-semibold text-slate-600 uppercase tracking-widest"
-                    >
-                      <History size={20} /> Histórico de Cotações
-                    </button>
-                    <button 
-                      onClick={() => {
-                        handleLogout();
-                        setIsMenuOpen(false);
-                      }}
-                      className="flex items-center gap-3 text-sm font-semibold text-red-500 uppercase tracking-widest"
-                    >
-                      <LogOut size={20} /> Terminar Sessão
-                    </button>
-                  </div>
-                ) : (
-                  <button 
-                    onClick={() => {
-                      handleOpenAuth('login');
-                      setIsMenuOpen(false);
-                    }}
-                    className="flex items-center gap-3 text-sm font-bold text-corp-blue uppercase tracking-widest py-4 border-t border-slate-100"
-                  >
-                    <LogIn size={20} /> Entrar
-                  </button>
-                )
-              )}
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </nav>
+      <CorporateHeader
+        activeView={activeView}
+        onNavigate={navigateTo}
+        isAuthReady={isAuthReady}
+        user={user}
+        isAdmin={isAdmin}
+        quoteCount={savedQuotes.length}
+        onLogin={() => handleOpenAuth('login')}
+        onProfile={() => setIsProfileModalOpen(true)}
+        onHistory={() => setShowHistory(true)}
+        onLogout={handleLogout}
+        onSupplierCheck={() => setShowFraudCheck(true)}
+      />
 
       {activeView === 'sourcing' ? (
         <SourcingModule
@@ -2398,164 +2207,12 @@ function AppContent() {
           onInjectIntoCalculator={handleInjectIntoCalculator}
         />
       ) : activeView === 'landing' ? (
+        <CorporateLanding onNavigate={navigateTo} />
+      ) : activeView === 'simulador' || activeView === 'rastreio' ? (
         <>
-          {/* Hero Section */}
-          <header id="inicio" className="relative bg-slate-900 text-white min-h-[60vh] md:min-h-[80vh] flex items-center px-6 overflow-hidden no-print">
-        <div className="absolute inset-0">
-          <motion.video 
-            autoPlay 
-            loop 
-            muted 
-            playsInline
-            poster="https://images.unsplash.com/photo-1578575437130-527eed3abbec?ixlib=rb-4.0.3&auto=format&fit=crop&w=2000&q=80"
-            initial={{ scale: 1.1 }}
-            animate={{ scale: 1.2 }}
-            transition={{ duration: 30, repeat: Infinity, repeatType: "reverse", ease: "linear" }}
-            className="w-full h-full object-cover opacity-40"
-          >
-            <source src="https://assets.mixkit.co/videos/preview/mixkit-cargo-ship-sailing-in-the-ocean-40043-large.mp4" type="video/mp4" />
-          </motion.video>
-          <motion.div 
-            initial={{ scale: 1.2 }}
-            animate={{ scale: 1 }}
-            transition={{ duration: 20, repeat: Infinity, repeatType: "reverse", ease: "linear" }}
-            className="absolute inset-0 bg-gradient-to-r from-slate-900 via-slate-900/80 to-transparent"
-          ></motion.div>
-        </div>
-        <div className="max-w-7xl mx-auto relative z-10 w-full">
-          <motion.div 
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8 }}
-            className="max-w-3xl space-y-8"
-          >
-            <h2 className="font-heading font-bold text-5xl md:text-7xl lg:text-8xl leading-[0.9] uppercase tracking-tighter">
-              Excelência em <br /><span className="text-corp-blue-light">cada importação.</span>
-            </h2>
-            <div className="flex flex-col sm:flex-row gap-4 pt-4">
-              <a href="#simulador" className="btn-modern-primary">
-                Calculadora Proforma <ChevronRight size={20} />
-              </a>
-              <a href="#serviços" className="btn-modern-outline !bg-transparent !text-white !border-white/20 hover:!bg-white/10">
-                Nossos Serviços
-              </a>
-            </div>
-          </motion.div>
-        </div>
-      </header>
-
-      {/* Stats Bar */}
-      <div className="bg-white py-10 md:py-16 no-print relative z-20 border-b border-slate-100">
-        <div className="max-w-7xl mx-auto px-6 grid grid-cols-2 md:grid-cols-4 gap-8 md:gap-12">
-          {[
-            { label: 'Transparência', value: '100%', icon: <ShieldCheck className="text-corp-blue" /> },
-            { label: 'Rota Especializada', value: 'China > MZ', icon: <Globe className="text-corp-blue" /> },
-            { label: 'Soluções Completas', value: 'Turn-key', icon: <Package className="text-corp-blue" /> },
-            { label: 'Acompanhamento', value: '24/7', icon: <Clock className="text-corp-blue" /> }
-          ].map((stat, i) => (
-            <motion.div 
-              key={i}
-              initial={{ opacity: 0, y: 20 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              transition={{ delay: i * 0.1 }}
-              viewport={{ once: true }}
-              className="flex items-center gap-5"
-            >
-              <div className="w-12 h-12 rounded-2xl bg-slate-50 flex items-center justify-center shrink-0">
-                {stat.icon}
-              </div>
-              <div>
-                <h4 className="font-heading font-bold text-2xl text-slate-900">{stat.value}</h4>
-                <p className="text-[10px] text-slate-500 uppercase tracking-widest font-semibold">{stat.label}</p>
-              </div>
-            </motion.div>
-          ))}
-        </div>
-      </div>
-
-      {/* About Section */}
-      <section id="a-empresa" className="py-12 md:py-20 px-6 bg-slate-50 no-print">
-        <div className="max-w-7xl mx-auto grid lg:grid-cols-2 gap-8 lg:gap-16 items-center">
-          <div className="space-y-6">
-            <h2 className="font-heading font-bold text-4xl md:text-6xl text-slate-900 leading-[0.9] uppercase tracking-tighter">
-              A Nossa Identidade.
-            </h2>
-            <div className="space-y-4 text-slate-600 leading-relaxed text-base md:text-lg">
-              <p>
-                A <strong className="text-corp-blue">PRIMEWAY INVEST & LOGÍSTICA</strong> é o seu parceiro estratégico. Garantimos que a sua mercadoria chegue ao destino com segurança, rapidez e transparência.
-              </p>
-            </div>
-          </div>
-          
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {[
-              { title: 'Transparência', desc: 'Processos claros.', icon: <ShieldCheck size={20} /> },
-              { title: 'Confiança', desc: 'Compromisso com prazos.', icon: <Clock size={20} /> },
-              { title: 'Inovação', desc: 'Tecnologia aplicada.', icon: <CheckCircle2 size={20} /> },
-              { title: 'Presença', desc: 'Conexão global.', icon: <Globe size={20} /> }
-            ].map((item, i) => (
-              <motion.div 
-                key={i}
-                whileHover={{ y: -5 }}
-                className="bento-item !p-6"
-              >
-                <div className="text-corp-blue mb-4">{item.icon}</div>
-                <h4 className="font-heading font-semibold text-slate-900 mb-2 uppercase text-[10px] tracking-widest">{item.title}</h4>
-                <p className="text-xs text-slate-500 leading-relaxed">{item.desc}</p>
-              </motion.div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Services Section */}
-      <section id="serviços" className="py-12 md:py-20 px-6 bg-white no-print">
-        <div className="max-w-7xl mx-auto">
-          <div className="text-center max-w-3xl mx-auto mb-12">
-            <h2 className="font-heading font-bold text-4xl md:text-5xl text-slate-900 uppercase tracking-tighter">Soluções Logísticas</h2>
-          </div>
-
-          <div className="grid md:grid-cols-2 gap-6 md:gap-8">
-            {/* Modelo Assistida */}
-            <motion.div 
-              whileHover={{ y: -5 }}
-              className="bento-item !p-8 border-t-4 border-corp-blue-light"
-            >
-              <div className="text-corp-blue mb-6">
-                <Package size={40} strokeWidth={1} />
-              </div>
-              <h3 className="font-heading font-bold text-2xl text-slate-900 mb-6 uppercase tracking-tight">Importação Assistida</h3>
-              <ul className="space-y-4 text-[10px] text-slate-500 font-semibold uppercase tracking-[0.3em]">
-                <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 bg-corp-blue-light rounded-full"></span> Recepção China</li>
-                <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 bg-corp-blue-light rounded-full"></span> Consolidação</li>
-                <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 bg-corp-blue-light rounded-full"></span> Frete Mar/Ar</li>
-                <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 bg-corp-blue-light rounded-full"></span> Despacho</li>
-              </ul>
-            </motion.div>
-
-            {/* Modelo Completa */}
-            <motion.div 
-              whileHover={{ y: -5 }}
-              className="bento-item !p-8 !bg-slate-900 !text-white border-t-4 border-corp-blue"
-            >
-              <div className="text-corp-blue-light mb-6">
-                <Ship size={40} strokeWidth={1} />
-              </div>
-              <h3 className="font-heading font-bold text-2xl text-white mb-6 uppercase tracking-tight">Importação Completa</h3>
-              <ul className="space-y-4 text-[10px] text-slate-400 font-semibold uppercase tracking-[0.3em]">
-                <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 bg-corp-blue rounded-full"></span> Busca & Negoc.</li>
-                <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 bg-corp-blue rounded-full"></span> Pagamento Int.</li>
-                <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 bg-corp-blue rounded-full"></span> Embalamento</li>
-                <li className="flex items-center gap-3"><span className="w-1.5 h-1.5 bg-corp-blue rounded-full"></span> Logística E2E</li>
-              </ul>
-            </motion.div>
-          </div>
-        </div>
-      </section>
-
-
-      {/* Cursos section moved to dedicated Classroom view */}
-
+          {activeView === 'rastreio' && (
+            <main id="conteudo-principal" tabIndex={-1} className="pw-tool-view no-print">
+              <div className="pw-container pw-tool-breadcrumb"><button onClick={() => navigateTo('landing')}>Início</button><ChevronRight size={13} aria-hidden="true" /><span>Rastreio de carga</span></div>
       {/* Rastreio Section */}
       <section id="rastreio" className="py-12 md:py-20 px-6 bg-slate-50 no-print">
         <div className="max-w-3xl mx-auto">
@@ -2576,14 +2233,15 @@ function AppContent() {
                 </button>
               </div>
             )}
-            <h2 className="font-heading font-bold text-3xl md:text-5xl text-slate-900 uppercase tracking-tighter">Rastreamento</h2>
-            <p className="text-slate-500 mt-4 text-sm font-semibold uppercase tracking-widest">Acompanhe o status da sua carga</p>
+            <h1 className="pw-title text-3xl md:text-5xl text-slate-900">Rastreio de carga</h1>
+            <p className="text-slate-500 mt-4 text-sm">Consulte o estado da sua carga com o código de rastreio.</p>
           </div>
           <div className="bg-white p-6 md:p-10 rounded-2xl border border-slate-100 shadow-sm relative overflow-hidden">
             <div className="flex flex-col sm:flex-row gap-4 relative z-10">
               <input 
                 type="text" 
-                placeholder="Insira o código de rastreamento (Ex: PW-0001)" 
+                aria-label="Código de rastreio"
+                placeholder="Código de rastreio (ex.: PW-0001)"
                 className="input-modern !py-4 flex-1 text-sm font-semibold"
                 value={trackingCode}
                 onChange={(e) => setTrackingCode(e.target.value)}
@@ -2677,13 +2335,18 @@ function AppContent() {
           </div>
         </div>
       </section>
+            </main>
+          )}
 
+          {activeView === 'simulador' && (
+            <div id="simulador" className="pw-tool-view no-print">
+              <div className="pw-container pw-tool-breadcrumb"><button onClick={() => navigateTo('landing')}>Início</button><ChevronRight size={13} aria-hidden="true" /><span>Simulador de importação</span></div>
       {/* Simulator Section */}
-      <main id="simulador" className="max-w-7xl mx-auto px-6 py-12 md:py-20 space-y-8 no-print">
+      <main id="conteudo-principal" tabIndex={-1} className="max-w-7xl mx-auto px-6 py-12 md:py-20 space-y-8 no-print">
         <div className="text-center max-w-3xl mx-auto space-y-2">
-          <span className="text-corp-orange font-bold text-xs uppercase tracking-[0.3em] block">Cotação & Fatura Oficial</span>
-          <h2 className="font-heading font-bold text-3xl md:text-5xl text-slate-900 uppercase tracking-tighter">Calculadora Proforma</h2>
-          <p className="text-slate-600 font-medium text-sm md:text-base max-w-2xl mx-auto">Calcule os custos de transporte, impostos alfandegários e emita a sua Fatura Proforma em PDF instantaneamente.</p>
+          <span className="pw-eyebrow text-corp-orange">Planeamento de importação</span>
+          <h1 className="pw-title text-3xl md:text-5xl text-slate-900">Simulador de importação</h1>
+          <p className="text-slate-600 text-sm md:text-base max-w-2xl mx-auto">Organize os valores da compra, transporte e impostos. Guarde a simulação ou prepare a sua proforma em PDF.</p>
         </div>
 
         {/* Sourcing Bridge Banner */}
@@ -4189,9 +3852,11 @@ function AppContent() {
           </div>
         </div>
       </main>
+            </div>
+          )}
         </>
       ) : (
-        <main className="flex-grow bg-slate-50 py-12 px-4 md:px-6">
+        <main id="conteudo-principal" tabIndex={-1} className="flex-grow bg-slate-50 py-12 px-4 md:px-6">
           <div className="max-w-7xl mx-auto">
             {/* Classroom Header Banner */}
             <div className="bg-gradient-to-r from-slate-900 via-[#1A284F] to-slate-900 rounded-3xl p-6 md:p-12 text-white mb-8 shadow-2xl relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
@@ -4698,90 +4363,13 @@ function AppContent() {
           </motion.div>
         )}
       </AnimatePresence>
-      {/* Footer */}
-      <footer className="bg-slate-900 text-white pt-12 pb-8 md:pt-20 md:pb-10 border-t border-white/5 no-print mt-auto">
-        <div className="max-w-7xl mx-auto px-6 grid grid-cols-1 md:grid-cols-4 gap-8 md:gap-12">
-          <div className="col-span-1 md:col-span-1">
-            <div className="mb-10">
-              <img 
-                src="https://files.manuscdn.com/user_upload_by_module/session_file/310419663028416962/glYQVTOtGErYGBoj.jpg" 
-                alt="PrimeWay Logo Dark" 
-                className="h-16 w-auto object-contain transition-transform duration-300 hover:scale-105 hover:opacity-90 cursor-pointer"
-                referrerPolicy="no-referrer"
-              />
-            </div>
-            <div className="space-y-4 text-sm text-slate-400">
-              <p className="flex items-center gap-2"><ShieldCheck size={16} className="text-corp-blue-light" /> NUIT: 402119357</p>
-            </div>
-          </div>
-          
-          <div>
-            <h4 className="font-heading font-bold mb-10 uppercase text-[10px] tracking-[0.4em] text-white/30">Sede Global</h4>
-            <ul className="space-y-4 text-sm text-slate-400">
-              <li className="flex items-start gap-4">
-                <MapPin size={20} className="text-corp-blue-light shrink-0 mt-1" /> 
-                <span className="leading-relaxed">Bairro Matola A, Quarteirão 17, Casa Nº 38, Cidade da Matola, Maputo - Moçambique</span>
-              </li>
-            </ul>
-          </div>
-          
-          <div>
-            <h4 className="font-heading font-bold mb-10 uppercase text-[10px] tracking-[0.4em] text-white/30">Contactos</h4>
-            <ul className="space-y-4 text-sm text-slate-400">
-              <li className="flex items-center gap-4 hover:text-white transition-colors cursor-pointer">
-                <Phone size={20} className="text-corp-blue-light" /> +258 84 291 4655
-              </li>
-              <li className="flex items-center gap-4 hover:text-white transition-colors cursor-pointer">
-                <Phone size={20} className="text-corp-blue-light" /> +258 82 692 1467
-              </li>
-              <li className="pt-6">
-                <a href="mailto:comercial@primewayinvest.com" className="text-corp-blue-light hover:text-white transition-all flex items-center gap-3">
-                  <Mail size={18} /> comercial@primewayinvest.com
-                </a>
-              </li>
-            </ul>
-          </div>
-
-          <div>
-            <h4 className="font-heading font-bold mb-10 uppercase text-[10px] tracking-[0.4em] text-white/30">Legal & Ferramentas</h4>
-            <ul className="space-y-4 text-sm text-slate-400">
-              <li><button onClick={() => setShowLegal(legalTerms.termos)} className="hover:text-white transition-colors text-left">Termos de Serviço</button></li>
-              <li><button onClick={() => setShowLegal(legalTerms.privacidade)} className="hover:text-white transition-colors text-left">Política de Privacidade</button></li>
-              <li><button onClick={() => setShowLegal(legalTerms.compliance)} className="hover:text-white transition-colors text-left">Compliance Aduaneiro</button></li>
-              <li>
-                <a 
-                  href="https://www.at.gov.mz/por/Alfandeagas/Pauta-Aduaneira" 
-                  target="_blank" 
-                  rel="noopener noreferrer" 
-                  className="hover:text-white transition-colors text-left flex items-center gap-2"
-                >
-                  Pauta Aduaneira (AT)
-                </a>
-              </li>
-              <li>
-                <button 
-                  onClick={() => setShowFraudCheck(true)}
-                  className="hover:text-white transition-colors text-left flex items-center gap-2 text-corp-orange"
-                >
-                  Verificação de Fornecedores
-                </button>
-              </li>
-              <li>
-                <button 
-                  onClick={handleInstallClick}
-                  className="hover:text-white transition-colors text-left flex items-center gap-2 text-sky-400 font-semibold"
-                >
-                  <Smartphone size={15} /> Instalar App no Telemóvel
-                </button>
-              </li>
-            </ul>
-          </div>
-        </div>
-        <div className="max-w-7xl mx-auto px-6 mt-12 md:mt-20 pt-8 border-t border-white/5 flex flex-col md:flex-row justify-between items-center text-[10px] text-white/20 uppercase tracking-[0.4em] font-bold">
-          <p>&copy; 2024 PrimeWay Invest & Logística, SU, Lda. Todos os direitos reservados.</p>
-          <p className="mt-6 md:mt-0">Global Logistics Infrastructure.</p>
-        </div>
-      </footer>
+      <CorporateFooter
+        onNavigate={navigateTo}
+        onLegal={topic => setShowLegal(legalTerms[topic])}
+        onSupplierCheck={() => setShowFraudCheck(true)}
+        onInstall={handleInstallClick}
+        showInstall={!isStandalone}
+      />
 
       {/* History Modal */}
       <AnimatePresence>
