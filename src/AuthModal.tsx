@@ -30,7 +30,7 @@ import {
   GoogleAuthProvider,
   User as FirebaseUser
 } from 'firebase/auth';
-import { doc, setDoc, Timestamp } from 'firebase/firestore';
+import { doc, getDoc, setDoc, Timestamp } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import { logoBase64 } from './logoBase64';
 
@@ -222,17 +222,24 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   };
 
   // Safe background profile synchronization (fire-and-forget, never blocking UI)
-  const syncUserProfile = async (userObj: { uid: string; email?: string | null; displayName?: string | null }) => {
+  const syncUserProfile = async (userObj: { uid: string; email?: string | null; displayName?: string | null; emailVerified?: boolean }) => {
     if (!userObj.uid || !userObj.email) return;
     try {
       const userRef = doc(db, 'users', userObj.uid);
-      const isAdminEmail = userObj.email === 'fabitoliuia7@gmail.com' || userObj.email === 'comercial@primewayinvest.com';
+      const existingSnapshot = await getDoc(userRef);
+      const existingProfile = existingSnapshot.exists() ? existingSnapshot.data() : {};
+      const normalizedEmail = userObj.email.trim().toLowerCase();
+      const isAdminEmail = userObj.emailVerified === true && (
+        normalizedEmail === 'fabitoliuia7@gmail.com' ||
+        normalizedEmail === 'comercial@primewayinvest.com'
+      );
+      const role = existingProfile.role === 'admin' || isAdminEmail ? 'admin' : 'client';
       await setDoc(userRef, {
         uid: userObj.uid,
         email: userObj.email,
         displayName: userObj.displayName || '',
-        role: isAdminEmail ? 'admin' : 'client',
-        createdAt: Timestamp.now()
+        role,
+        ...(existingProfile.createdAt ? {} : { createdAt: Timestamp.now() })
       }, { merge: true });
     } catch {
       // Ignored non-blocking
@@ -309,7 +316,8 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       syncUserProfile({
         uid: cred.user.uid,
         email: cred.user.email,
-        displayName: nameTrim
+        displayName: nameTrim,
+        emailVerified: cred.user.emailVerified
       });
 
       setSuccessMessage('Conta criada com sucesso! Bem-vindo à PrimeWay.');

@@ -62,6 +62,7 @@ export interface TaxasPautaResultado {
   posicaoDescricao?: string;
   baseLegal?: string;
   unidadeFisica?: string;
+  verificado?: boolean;
   fonte: 'pauta_oficial' | 'estimativa_categoria' | 'padrao';
 }
 
@@ -2276,52 +2277,78 @@ export async function consultarPautaTempoReal(termoOuCodigo: string): Promise<Ta
   capituloInfo?: CapituloSH;
 }> {
   const query = termoOuCodigo.trim();
+  if (!query) {
+    throw new Error('Informe um código ou descrição para consultar a pauta.');
+  }
+  if (query.length > 256) {
+    throw new Error('A consulta da pauta deve ter no máximo 256 caracteres.');
+  }
 
   // Tentar primeiro chamada real-time na API do servidor
   try {
     const res = await fetch(`/api/pauta/realtime-lookup?q=${encodeURIComponent(query)}`);
     if (res.ok) {
       const data = await res.json();
-      if (data && data.codigo) {
+      const rawCodigo = typeof data?.codigo === 'string' ? data.codigo.trim() : '';
+      const codigo = /^\d{8}$/.test(rawCodigo)
+        ? `${rawCodigo.slice(0, 4)}.${rawCodigo.slice(4, 6)}.${rawCodigo.slice(6, 8)}`
+        : rawCodigo;
+      const descricao = typeof data?.descricao === 'string' ? data.descricao.trim() : '';
+      const categoria = typeof data?.categoria === 'string' ? data.categoria.trim() : '';
+      const tipoBem = typeof data?.tipoBem === 'string' ? data.tipoBem : 'capital';
+      const notas = typeof data?.notas === 'string' ? data.notas : '';
+      const direitosPerc = Number(data?.direitosPerc);
+      const icePerc = Number(data?.icePerc);
+      const ivaPerc = Number(data?.ivaPerc);
+      const taxasValidas = [direitosPerc, icePerc, ivaPerc].every((rate) => Number.isFinite(rate) && rate >= 0 && rate <= 100);
+      if (codigo && descricao && categoria && notas && taxasValidas && codigo.length <= 64 && descricao.length <= 500 && categoria.length <= 160 && notas.length <= 2000) {
+        const verificado = data.verificado !== false;
         // Armazenar no cache dinâmico da sessão
-        adicionarItemPautaDinamica({
-          codigo: data.codigo,
-          shCapitulo: data.codigo.slice(0, 2),
-          shPosicao: data.codigo.replace(/\D/g, '').slice(0, 4),
-          descricao: data.descricao,
-          categoria: data.categoria,
-          tipoBem: data.tipoBem,
-          direitosPerc: data.direitosPerc,
-          icePerc: data.icePerc,
-          ivaPerc: data.ivaPerc,
-          notas: data.notas,
-          palavrasChave: [query]
-        });
+        if (verificado) {
+          adicionarItemPautaDinamica({
+            codigo,
+            shCapitulo: codigo.slice(0, 2),
+            shPosicao: codigo.replace(/\D/g, '').slice(0, 4),
+            descricao,
+            categoria,
+            tipoBem: tipoBem as PautaItem['tipoBem'],
+            direitosPerc,
+            icePerc,
+            ivaPerc,
+            notas,
+            palavrasChave: [query]
+          });
+        }
 
-        const totalTaxas = data.direitosPerc + data.icePerc + data.ivaPerc;
+        const totalTaxas = direitosPerc + icePerc + ivaPerc;
+        const numericOrDefault = (value: unknown, fallback: number) => {
+          const numeric = Number(value);
+          return Number.isFinite(numeric) && numeric >= 0 ? numeric : fallback;
+        };
         return {
           encontrado: true,
-          codigo: data.codigo,
-          descricao: data.descricao,
-          categoria: data.categoria,
-          tipoBem: data.tipoBem,
-          direitosPerc: data.direitosPerc,
-          icePerc: data.icePerc,
-          ivaPerc: data.ivaPerc,
-          notas: data.notas,
-          fonte: 'pauta_oficial',
+          codigo,
+          descricao,
+          categoria,
+          tipoBem,
+          direitosPerc,
+          icePerc,
+          ivaPerc,
+          notas,
+          fonte: verificado ? 'pauta_oficial' : 'estimativa_categoria',
+          verificado,
           tempoReal: true,
-          dataConsulta: data.dataConsulta || new Date().toISOString(),
-          tsaMzn: data.tsaMzn || 1000,
-          mcnetMzn: data.mcnetMzn || 1550,
-          kudumbaMzn: data.kudumbaMzn || 2250,
+          dataConsulta: typeof data.dataConsulta === 'string' ? data.dataConsulta : new Date().toISOString(),
+          tsaMzn: numericOrDefault(data.tsaMzn, 1000),
+          mcnetMzn: numericOrDefault(data.mcnetMzn, 1550),
+          kudumbaMzn: numericOrDefault(data.kudumbaMzn, 2250),
           totalEstimadoTaxasPct: totalTaxas,
-          requesitosOficiais: data.requesitosOficiais || [
+          requesitosOficiais: Array.isArray(data.requesitosOficiais) ? data.requesitosOficiais.filter((item: unknown): item is string => typeof item === 'string').slice(0, 20) : [
             'Declaração na Janela Única MCNET (JUE)',
             'Inspecção Não-Intrusiva Kudumba (Scanner)',
             'Termo de Compromisso Bancário (Banco de Moçambique)'
           ],
-          capituloInfo: CAPITULOS_SISTEMA_HARMONIZADO.find(c => c.capitulo === data.codigo.slice(0, 2))
+          capituloInfo: CAPITULOS_SISTEMA_HARMONIZADO.find(c => c.capitulo === codigo.slice(0, 2))
         };
       }
     }

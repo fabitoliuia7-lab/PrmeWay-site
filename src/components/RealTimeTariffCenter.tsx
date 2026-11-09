@@ -27,6 +27,9 @@ import {
   CapituloSH,
   consultarPautaTempoReal
 } from '../pautaAduaneira';
+import { onIdTokenChanged } from 'firebase/auth';
+import { auth } from '../firebase';
+import { checkAdminSession, getFirebaseIdToken } from '../services/apiSecurity';
 
 interface RealTimeTariffCenterProps {
   isOpen: boolean;
@@ -65,6 +68,30 @@ export const RealTimeTariffCenter: React.FC<RealTimeTariffCenterProps> = ({
   const [novasNotas, setNovasNotas] = useState('');
   const [salvandoCustom, setSalvandoCustom] = useState(false);
   const [sucessoCustom, setSucessoCustom] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [adminCheckError, setAdminCheckError] = useState<string | null>(null);
+  const [customError, setCustomError] = useState<string | null>(null);
+
+  const refreshAdminSession = async () => {
+    if (!auth.currentUser) {
+      setIsAdmin(false);
+      setAdminCheckError(null);
+      return;
+    }
+
+    try {
+      const session = await checkAdminSession();
+      setIsAdmin(session.admin);
+      setAdminCheckError(
+        session.status === 503
+          ? 'Não foi possível verificar a sessão administrativa agora. Tente novamente.'
+          : null
+      );
+    } catch (error) {
+      setIsAdmin(false);
+      setAdminCheckError(error instanceof Error ? error.message : 'Não foi possível verificar as permissões administrativas.');
+    }
+  };
 
   // Inicializar com item padrão relevante
   useEffect(() => {
@@ -72,6 +99,21 @@ export const RealTimeTariffCenter: React.FC<RealTimeTariffCenterProps> = ({
       handleSearch('8422.40.00'); // Máquinas de empacotar/embalar
     }
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    void refreshAdminSession();
+    const unsubscribe = onIdTokenChanged(auth, () => {
+      void refreshAdminSession();
+    });
+    return () => unsubscribe();
+  }, [isOpen]);
+
+  useEffect(() => {
+    if (!isAdmin && secaoAtiva === 'adicionar') {
+      setSecaoAtiva('busca');
+    }
+  }, [isAdmin, secaoAtiva]);
 
   const handleSearch = async (termToSearch?: string) => {
     const term = (termToSearch !== undefined ? termToSearch : searchTerm).trim();
@@ -115,22 +157,38 @@ export const RealTimeTariffCenter: React.FC<RealTimeTariffCenterProps> = ({
 
   const handleSalvarCustom = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!novoCodigo || !novaDescricao) return;
+    setCustomError(null);
+    const codigo = novoCodigo.trim();
+    const descricao = novaDescricao.trim();
+    const categoria = novaCategoria.trim() || 'Personalizado Despachante';
+    const notas = novasNotas.trim() || 'Registado manualmente pelo importador/despachante.';
+    const direitosPerc = Number(novosDireitos);
+    const icePerc = Number(novoIce);
+    const ivaPerc = Number(novoIva);
+    if (!codigo || !descricao) return;
+    if (![direitosPerc, icePerc, ivaPerc].every((value) => Number.isFinite(value) && value >= 0 && value <= 100)) {
+      setCustomError('As taxas devem ser números entre 0 e 100.');
+      return;
+    }
 
     setSalvandoCustom(true);
     try {
+      const token = await getFirebaseIdToken();
       const res = await fetch('/api/pauta/custom', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`
+        },
         body: JSON.stringify({
-          codigo: novoCodigo,
-          descricao: novaDescricao,
-          categoria: novaCategoria || 'Personalizado Despachante',
+          codigo,
+          descricao,
+          categoria,
           tipoBem: 'capital',
-          direitosPerc: Number(novosDireitos) || 0,
-          icePerc: Number(novoIce) || 0,
-          ivaPerc: Number(novoIva) || 16,
-          notas: novasNotas || 'Registado manualmente pelo importador/despachante.'
+          direitosPerc,
+          icePerc,
+          ivaPerc,
+          notas
         })
       });
 
@@ -139,11 +197,22 @@ export const RealTimeTariffCenter: React.FC<RealTimeTariffCenterProps> = ({
         setTimeout(() => {
           setSucessoCustom(false);
           setSecaoAtiva('busca');
-          handleSearch(novoCodigo);
+          handleSearch(codigo);
         }, 1500);
+      } else {
+        const errorData = await res.json().catch(() => ({}));
+        const messages: Record<number, string> = {
+          400: 'Os dados do código pautal são inválidos. Verifique os campos e tente novamente.',
+          401: 'A sua sessão expirou. Inicie sessão novamente para cadastrar um código.',
+          403: 'Apenas administradores autorizados podem cadastrar códigos pautais.',
+          429: 'Muitos pedidos em pouco tempo. Aguarde e tente novamente.',
+          503: 'O serviço está temporariamente indisponível. Tente novamente mais tarde.'
+        };
+        setCustomError(messages[res.status] || errorData.error || `Não foi possível cadastrar o código (HTTP ${res.status}).`);
       }
     } catch (err) {
       console.error('Erro ao salvar código customizado:', err);
+      setCustomError(err instanceof Error ? err.message : 'Não foi possível cadastrar o código.');
     } finally {
       setSalvandoCustom(false);
     }
@@ -229,21 +298,29 @@ export const RealTimeTariffCenter: React.FC<RealTimeTariffCenterProps> = ({
             97 Capítulos do Sistema Harmonizado
           </button>
 
-          <button
-            onClick={() => setSecaoAtiva('adicionar')}
-            className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold border-b-2 transition-all cursor-pointer ${
-              secaoAtiva === 'adicionar'
-                ? 'border-corp-blue text-corp-blue bg-white rounded-t-lg'
-                : 'border-transparent text-slate-500 hover:text-slate-900'
-            }`}
-          >
-            <Plus size={14} />
-            Cadastrar Novo Código Pautal
-          </button>
+          {isAdmin && (
+            <button
+              onClick={() => setSecaoAtiva('adicionar')}
+              className={`flex items-center gap-1.5 px-4 py-2.5 text-xs font-bold border-b-2 transition-all cursor-pointer ${
+                secaoAtiva === 'adicionar'
+                  ? 'border-corp-blue text-corp-blue bg-white rounded-t-lg'
+                  : 'border-transparent text-slate-500 hover:text-slate-900'
+              }`}
+            >
+              <Plus size={14} />
+              Cadastrar Novo Código Pautal
+            </button>
+          )}
         </div>
 
         {/* Content Body */}
         <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-6">
+          {adminCheckError && !isAdmin && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs font-semibold text-red-700 flex items-start gap-2">
+              <AlertCircle size={16} className="shrink-0 mt-0.5" />
+              <span>{adminCheckError}</span>
+            </div>
+          )}
           {secaoAtiva === 'busca' && (
             <div className="space-y-6">
               {/* Barra de Busca Dinâmica */}
@@ -555,6 +632,12 @@ export const RealTimeTariffCenter: React.FC<RealTimeTariffCenterProps> = ({
           {/* Cadastro de Novo Código Pautal (Personalizado) */}
           {secaoAtiva === 'adicionar' && (
             <div className="max-w-xl mx-auto space-y-4">
+              {(adminCheckError || customError) && (
+                <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs font-semibold text-red-700 flex items-start gap-2">
+                  <AlertCircle size={16} className="shrink-0 mt-0.5" />
+                  <span>{customError || adminCheckError}</span>
+                </div>
+              )}
               <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-xs text-slate-700">
                 <p className="font-bold text-corp-blue mb-1">
                   💡 Registo de Notificação / Código Aduaneiro Personalizado:

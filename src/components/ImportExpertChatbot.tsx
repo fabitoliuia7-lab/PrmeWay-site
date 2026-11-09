@@ -38,7 +38,7 @@ import {
 
 export interface ChatMessage {
   id: string;
-  role: 'user' | 'assistant' | 'system';
+  role: 'user' | 'assistant' | 'model';
   content: string;
   timestamp: string;
 }
@@ -82,6 +82,30 @@ const QUICK_PROMPTS = [
     prompt: 'Qual a diferença prática e de custos entre a Grupagem LCL / DDP da PrimeWay e trazer um Contentor Inteiro FCL da China?'
   }
 ];
+
+const buildChatHistory = (items: ChatMessage[]) => {
+  const eligible = items
+    .filter((message) => {
+      const content = message.content.trim();
+      return Boolean(content) && (message.role === 'user' || message.role === 'assistant' || message.role === 'model') &&
+        !/^⚠️\s*\*\*Aviso:/i.test(content);
+    })
+    .map((message) => {
+      const maxLength = message.role === 'user' ? 4000 : 8000;
+      return {
+        role: message.role,
+        content: message.content.trim().slice(0, maxLength)
+      };
+    })
+    .slice(-20);
+
+  let totalCharacters = eligible.reduce((total, message) => total + message.content.length, 0);
+  while (totalCharacters > 24000 && eligible.length > 1) {
+    const removed = eligible.shift();
+    totalCharacters -= removed?.content.length || 0;
+  }
+  return eligible;
+};
 
 export const ImportExpertChatbot: React.FC<ImportExpertChatbotProps> = ({
   isOpen: externalIsOpen,
@@ -175,7 +199,7 @@ export const ImportExpertChatbot: React.FC<ImportExpertChatbotProps> = ({
   }, [messages, isOpen, isMinimized, activeTab]);
 
   const handleSendMessage = async (textToSend?: string) => {
-    const text = (textToSend || inputValue).trim();
+    const text = (textToSend || inputValue).trim().slice(0, 4000);
     if (!text || isLoading) return;
 
     // Switch back to chat tab if sent from pauta tab
@@ -206,10 +230,7 @@ export const ImportExpertChatbot: React.FC<ImportExpertChatbotProps> = ({
     setAbortController(controller);
 
     try {
-      const historyPayload = [...messages, userMessage].map(m => ({
-        role: m.role,
-        content: m.content
-      }));
+      const historyPayload = buildChatHistory([...messages, userMessage]);
 
       const res = await fetch('/api/chat', {
         method: 'POST',
@@ -250,22 +271,25 @@ export const ImportExpertChatbot: React.FC<ImportExpertChatbotProps> = ({
             if (dataStr === '[DONE]') {
               break;
             }
+            let parsed: { text?: string; error?: string };
             try {
-              const parsed = JSON.parse(dataStr);
-              if (parsed.text) {
-                accumulatedText += parsed.text;
-                setMessages(prev => 
-                  prev.map(msg => 
-                    msg.id === assistantMsgId 
-                      ? { ...msg, content: accumulatedText }
-                      : msg
-                  )
-                );
-              } else if (parsed.error) {
-                throw new Error(parsed.error);
-              }
-            } catch (e) {
-              // Ignore non-json chunk lines
+              parsed = JSON.parse(dataStr);
+            } catch {
+              // Ignore non-JSON chunk lines, but never swallow parsed SSE errors.
+              continue;
+            }
+            if (parsed.error) {
+              throw new Error(parsed.error);
+            }
+            if (parsed.text) {
+              accumulatedText += parsed.text;
+              setMessages(prev =>
+                prev.map(msg =>
+                  msg.id === assistantMsgId
+                    ? { ...msg, content: accumulatedText }
+                    : msg
+                )
+              );
             }
           }
         }
@@ -732,10 +756,10 @@ export const ImportExpertChatbot: React.FC<ImportExpertChatbotProps> = ({
                     {messages.map((msg) => (
                       <div
                         key={msg.id}
-                        className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
+                          className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
                       >
                         <div className="flex items-start gap-2.5 max-w-[90%] sm:max-w-[85%]">
-                          {msg.role === 'assistant' && (
+                          {msg.role !== 'user' && (
                             <div className="w-7 h-7 rounded-lg bg-corp-blue text-white flex items-center justify-center shrink-0 mt-1 shadow-sm">
                               <Bot size={15} />
                             </div>
@@ -756,7 +780,7 @@ export const ImportExpertChatbot: React.FC<ImportExpertChatbotProps> = ({
                             )}
 
                             {/* Footer Action buttons for assistant messages */}
-                            {msg.role === 'assistant' && msg.id !== 'welcome-1' && (
+                            {msg.role !== 'user' && msg.id !== 'welcome-1' && (
                               <div className="mt-3 pt-2.5 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
                                 <span className="text-[10px] text-slate-400 font-semibold">{msg.timestamp}</span>
                                 <div className="flex items-center gap-1.5">
@@ -870,9 +894,10 @@ export const ImportExpertChatbot: React.FC<ImportExpertChatbotProps> = ({
                     >
                       <input
                         type="text"
+                        maxLength={4000}
                         placeholder="Ex: Puxar taxas de geradores e painéis solares na pauta..."
                         value={inputValue}
-                        onChange={(e) => setInputValue(e.target.value)}
+                        onChange={(e) => setInputValue(e.target.value.slice(0, 4000))}
                         disabled={isLoading}
                         className="flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2.5 text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-corp-blue/30 focus:border-corp-blue transition-all font-medium disabled:opacity-50"
                       />

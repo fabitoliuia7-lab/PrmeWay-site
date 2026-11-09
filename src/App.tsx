@@ -62,7 +62,7 @@ import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer, L
 import { 
   signInWithPopup, 
   GoogleAuthProvider, 
-  onAuthStateChanged, 
+  onIdTokenChanged,
   signOut, 
   User as FirebaseUser 
 } from 'firebase/auth';
@@ -82,6 +82,7 @@ import {
   arrayUnion
 } from 'firebase/firestore';
 import { auth, db } from './firebase';
+import { checkAdminSession } from './services/apiSecurity';
 import { toJpeg } from 'html-to-image';
 import { jsPDF } from 'jspdf';
 import { logoBase64 } from './logoBase64';
@@ -454,7 +455,7 @@ function AppContent() {
   };
 
   const [user, setUser] = useState<FirebaseUser | null>(null);
-  const isAdmin = user?.email === 'fabitoliuia7@gmail.com' || user?.email === 'comercial@primewayinvest.com';
+  const [isAdmin, setIsAdmin] = useState(false);
   
   // --- Auth Modal & Profile Management States ---
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
@@ -991,11 +992,23 @@ function AppContent() {
   // --- Firebase Auth ---
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+    let active = true;
+    let sessionVersion = 0;
+    const unsubscribe = onIdTokenChanged(auth, (currentUser) => {
+      const version = ++sessionVersion;
       setUser(currentUser);
       setIsAuthReady(true);
+      setIsAdmin(false);
+      if (!currentUser) return;
+      void checkAdminSession().then(session => {
+        if (active && version === sessionVersion && auth.currentUser?.uid === currentUser.uid) {
+          setIsAdmin(session.admin);
+        }
+      }).catch(() => {
+        if (active && version === sessionVersion) setIsAdmin(false);
+      });
     });
-    return () => unsubscribe();
+    return () => { active = false; sessionVersion += 1; unsubscribe(); };
   }, []);
 
   useEffect(() => {
