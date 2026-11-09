@@ -3,6 +3,9 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import dotenv from 'dotenv';
 import { GoogleGenAI, Type } from '@google/genai';
+import { requireAdmin } from './server/adminAuth';
+import { createIpLimiter, createChatBudget, positiveInteger } from './server/requestLimits';
+import { validateChatPayload, validateCustomTariff } from './server/validation';
 import { 
   PAUTA_MOCAMBIQUE, 
   obterTaxasPauta, 
@@ -27,14 +30,35 @@ dotenv.config();
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const app = express();
-app.use(express.json({ limit: '10mb' }));
+export const app = express();
+app.disable('x-powered-by');
+// Only trust explicitly configured reverse-proxy CIDRs; never trust arbitrary X-Forwarded-For.
+app.set('trust proxy', process.env.TRUSTED_PROXY_CIDRS?.split(',').map(value => value.trim()).filter(Boolean) ?? false);
+app.use('/api', createIpLimiter(120));
+app.use('/api', express.json({ limit: '128kb', strict: true }));
+app.use('/api', (err: any, _req: Request, res: Response, next: express.NextFunction) => {
+  if (err.type === 'entity.too.large') return res.status(413).json({ error: 'O pedido excede o limite de 128 KB.' });
+  if (err instanceof SyntaxError && 'status' in err && err.status === 400) return res.status(400).json({ error: 'JSON inválido.' });
+  next(err);
+});
+app.use('/api/pauta', (req: Request, res: Response, next: express.NextFunction) => {
+  if (req.query.q !== undefined && (typeof req.query.q !== 'string' || req.query.q.length > 256)) {
+    return res.status(400).json({ error: 'A pesquisa pode ter até 256 caracteres.' });
+  }
+  next();
+});
+const adminLimiter = createIpLimiter(20);
+app.get('/api/admin/session', adminLimiter, requireAdmin, (_req: Request, res: Response) => {
+  res.setHeader('Cache-Control', 'no-store');
+  res.json({ admin: true });
+});
 
 // Initialise GoogleGenAI server-side with telemetry User-Agent as required
 const apiKey = process.env.GEMINI_API_KEY || '';
 const ai = new GoogleGenAI({
   apiKey,
   httpOptions: {
+    timeout: 30_000,
     headers: {
       'User-Agent': 'aistudio-build',
     }
@@ -472,9 +496,13 @@ app.get('/api/pauta/at-status', (_req: Request, res: Response) => {
 });
 
 // Route to trigger live re-sync from at.gov.mz
-app.post('/api/pauta/at-sync', async (_req: Request, res: Response) => {
-  const result = await syncLiveFromAT();
-  res.json(result);
+app.post('/api/pauta/at-sync', adminLimiter, requireAdmin, createIpLimiter(2, 600_000), async (_req: Request, res: Response) => {
+  try {
+    const result = await syncLiveFromAT();
+    res.json(result);
+  } catch {
+    res.status(502).json({ error: 'Não foi possível sincronizar a pauta.' });
+  }
 });
 
 // Route to search Pauta Aduaneira directly
@@ -726,21 +754,7 @@ app.get('/api/pauta/realtime-lookup', async (req: Request, res: Response) => {
     }
   }
 
-  // Guardar dinamicamente no runtime
-  const newItem = {
-    codigo: resolvedCodigo,
-    shCapitulo: resolvedCodigo.slice(0, 2),
-    shPosicao: resolvedCodigo.replace(/\D/g, '').slice(0, 4),
-    descricao: resolvedDescricao,
-    categoria: resolvedCategoria,
-    tipoBem: resolvedTipoBem,
-    direitosPerc: resolvedDA,
-    icePerc: resolvedICE,
-    ivaPerc: resolvedIVA,
-    notas: resolvedNotas,
-    palavrasChave: [query]
-  };
-  adicionarItemPautaDinamica(newItem);
+  // Public lookups must be read-only: never persist user queries into the global tariff cache.
 
   return res.json({
     tempoReal: true,
@@ -756,9 +770,9 @@ app.get('/api/pauta/realtime-lookup', async (req: Request, res: Response) => {
     mcnetMzn: 1550,
     kudumbaMzn: 2250,
     notas: resolvedNotas,
-    fonte: 'Pauta Aduaneira Oficial da República de Moçambique (Classificação Dinâmica em Tempo Real)',
+    fonte: 'Estimativa de classificação — requer confirmação por despachante',
     dataConsulta: new Date().toISOString(),
-    verificado: true,
+    verificado: false,
     capituloInfo: capituloObj || CAPITULOS_SISTEMA_HARMONIZADO.find(c => c.capitulo === resolvedCodigo.slice(0, 2))
   });
 });
@@ -780,41 +794,30 @@ app.get('/api/pauta/cambio-aduaneiro', (_req: Request, res: Response) => {
 });
 
 // Route to register a custom tariff code into live cache
-app.post('/api/pauta/custom', (req: Request, res: Response) => {
-  const { codigo, descricao, categoria, tipoBem, direitosPerc, icePerc = 0, ivaPerc = 16, notas } = req.body || {};
-  if (!codigo || !descricao) {
-    return res.status(400).json({ error: 'Código e descrição são obrigatórios.' });
+app.post('/api/pauta/custom', adminLimiter, requireAdmin, (req: Request, res: Response) => {
+  try {
+    const customItem = validateCustomTariff(req.body);
+    adicionarItemPautaDinamica(customItem);
+    res.json({ success: true, item: customItem });
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : 'Item pautal inválido.' });
   }
-
-  const customItem = {
-    codigo,
-    shCapitulo: codigo.slice(0, 2),
-    shPosicao: codigo.replace(/\D/g, '').slice(0, 4),
-    descricao,
-    categoria: categoria || 'Personalizado Despachante',
-    tipoBem: tipoBem || 'capital',
-    direitosPerc: Number(direitosPerc) || 0,
-    icePerc: Number(icePerc) || 0,
-    ivaPerc: Number(ivaPerc) || 16,
-    notas: notas || 'Adicionado pelo utilizador / despachante em tempo real.',
-    palavrasChave: [descricao.toLowerCase(), codigo]
-  };
-
-  adicionarItemPautaDinamica(customItem);
-  res.json({ success: true, item: customItem });
 });
 
 // Track temporary quota backoff to prevent repeatedly throwing 402 errors to console
 let geminiQuotaDepletedUntil = 0;
 
 // Main Chatbot endpoint with Server-Sent Events (SSE) streaming
-app.post('/api/chat', async (req: Request, res: Response) => {
-  const { messages = [], stream = true } = req.body || {};
-
-  if (!messages || !Array.isArray(messages) || messages.length === 0) {
-    return res.status(400).json({ error: 'Nenhuma mensagem enviada.' });
+const chatBudget = createChatBudget({ maximum: positiveInteger(process.env.CHAT_GLOBAL_MAX_PER_HOUR, 120) });
+app.post('/api/chat', createIpLimiter(12), (req: Request, res: Response, next: express.NextFunction) => {
+  try {
+    res.locals.chatPayload = validateChatPayload(req.body);
+    next();
+  } catch (error) {
+    res.status(400).json({ error: error instanceof Error ? error.message : 'Pedido inválido.' });
   }
-
+}, chatBudget, async (_req: Request, res: Response) => {
+  const { messages, stream } = res.locals.chatPayload as ReturnType<typeof validateChatPayload>;
   const lastUserMsg = messages[messages.length - 1]?.content || '';
   const now = Date.now();
   const shouldUseKnowledgeEngine = !apiKey || now < geminiQuotaDepletedUntil;
@@ -845,6 +848,10 @@ app.post('/api/chat', async (req: Request, res: Response) => {
     }
   }
 
+  const controller = new AbortController();
+  const abortOnClose = () => { if (!res.writableFinished) controller.abort(); };
+  res.once('close', abortOnClose);
+  const deadline = setTimeout(() => controller.abort(), 30_000);
   try {
 
     // Format chat history for GoogleGenAI
@@ -882,10 +889,13 @@ app.post('/api/chat', async (req: Request, res: Response) => {
           systemInstruction: systemInstructionWithContext,
           temperature: 0.4,
           topP: 0.9,
+          maxOutputTokens: 1500,
+          abortSignal: controller.signal,
         }
       });
 
       for await (const chunk of responseStream) {
+        if (res.destroyed) break;
         const text = chunk.text;
         if (text) {
           res.write(`data: ${JSON.stringify({ text })}\n\n`);
@@ -901,12 +911,22 @@ app.post('/api/chat', async (req: Request, res: Response) => {
         config: {
           systemInstruction: systemInstructionWithContext,
           temperature: 0.4,
+          maxOutputTokens: 1500,
+          abortSignal: controller.signal,
         }
       });
 
       return res.json({ text: response.text });
     }
   } catch (_err: any) {
+    if (res.destroyed) return;
+    // Do not append an unrelated fallback to a partially streamed AI response.
+    if (res.headersSent && stream) {
+      res.write(`data: ${JSON.stringify({ error: 'Resposta interrompida. Tente novamente.' })}\n\n`);
+      res.write('data: [DONE]\n\n');
+      res.end();
+      return;
+    }
     // Graceful backoff: if prepayment credits depleted or rate limit hit, switch quietly to knowledge engine
     geminiQuotaDepletedUntil = Date.now() + 5 * 60 * 1000;
     const fallbackResponse = generateSpecialistResponse(lastUserMsg);
@@ -936,6 +956,9 @@ app.post('/api/chat', async (req: Request, res: Response) => {
         return res.json({ text: fallbackResponse });
       }
     }
+  } finally {
+    clearTimeout(deadline);
+    res.off('close', abortOnClose);
   }
 });
 
@@ -964,7 +987,9 @@ async function startServer() {
   });
 }
 
-startServer().catch((err) => {
-  console.error('Failed to start server:', err);
-  process.exit(1);
-});
+if (process.argv[1] && path.resolve(process.argv[1]) === __filename) {
+  startServer().catch((err) => {
+    console.error('Failed to start server:', err);
+    process.exit(1);
+  });
+}

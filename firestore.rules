@@ -46,9 +46,12 @@ service cloud.firestore {
 
     function isAdmin() {
       return isAuthenticated() &&
-        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-         request.auth.token.email == "fabitoliuia7@gmail.com" ||
-         request.auth.token.email == "comercial@primewayinvest.com");
+        ((request.auth.token.keys().hasAny(['admin']) && request.auth.token.admin == true) ||
+         (request.auth.token.keys().hasAll(['email', 'email_verified']) &&
+          request.auth.token.email_verified == true &&
+          request.auth.token.email in ["fabitoliuia7@gmail.com", "comercial@primewayinvest.com"]) ||
+         (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin'));
     }
 
     function isValidEmail(email) {
@@ -88,6 +91,38 @@ service cloud.firestore {
 
     function isValidDebitNote(data) {
       return data.userId == request.auth.uid;
+    }
+
+    function isValidPautaItem(data) {
+      return data.keys().hasOnly([
+               'codigo', 'shCapitulo', 'shPosicao', 'descricao', 'categoria',
+               'tipoBem', 'direitosPerc', 'icePerc', 'ivaPerc', 'unidadeFisica',
+               'notas', 'palavrasChave'
+             ]) &&
+             data.keys().hasAll([
+               'codigo', 'shCapitulo', 'shPosicao', 'descricao', 'categoria',
+               'tipoBem', 'direitosPerc', 'icePerc', 'ivaPerc'
+             ]) &&
+             data.codigo is string &&
+             data.codigo.matches("^[0-9]{4}\\.[0-9]{2}\\.[0-9]{2}$") &&
+             data.shCapitulo is string &&
+             data.shCapitulo.matches("^[0-9]{2}$") &&
+             data.shPosicao is string &&
+             data.shPosicao.matches("^[0-9]{4}$") &&
+             data.descricao is string &&
+             data.descricao.size() > 0 && data.descricao.size() <= 1000 &&
+             data.categoria is string &&
+             data.categoria.size() > 0 && data.categoria.size() <= 200 &&
+             data.tipoBem in ['capital', 'intermediario', 'consumo', 'veiculo', 'isento', 'especial'] &&
+             data.direitosPerc is number && data.direitosPerc >= 0 && data.direitosPerc <= 100 &&
+             data.icePerc is number && data.icePerc >= 0 && data.icePerc <= 100 &&
+             data.ivaPerc is number && data.ivaPerc >= 0 && data.ivaPerc <= 100 &&
+             (!data.keys().hasAny(['unidadeFisica']) ||
+              (data.unidadeFisica is string && data.unidadeFisica.size() > 0 && data.unidadeFisica.size() <= 20)) &&
+             (!data.keys().hasAny(['notas']) ||
+              (data.notas is string && data.notas.size() <= 2000)) &&
+             (!data.keys().hasAny(['palavrasChave']) ||
+              (data.palavrasChave is list && data.palavrasChave.size() <= 50));
     }
 
     // ===============================================================
@@ -130,7 +165,8 @@ service cloud.firestore {
 
     match /pauta_itens/{itemId} {
       allow read: if true;
-      allow write: if true;
+      allow create, update: if isAdmin() && isValidPautaItem(request.resource.data);
+      allow delete: if isAdmin();
     }
   }
 }
