@@ -1,0 +1,19 @@
+.pw-simulator-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+.pw-simulator-heading .pw-secondary { min-height: 42px; padding: 10px 16px; }
+.pw-simulator-modes, .pw-simulator-process { display: flex; flex-wrap: wrap; gap: 6px; padding: 5px; border: 1px solid #dfe3e6; border-radius: 6px; background: #eef0f1; }
+.pw-simulator-modes button, .pw-simulator-process button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 42px; padding: 10px 16px; color: #566575; font-size: 13px; font-weight: 500; border-radius: 4px; cursor: pointer; transition: background-color 160ms, color 160ms; }
+.pw-simulator-modes button { flex: 1; }
+.pw-simulator-modes button:hover, .pw-simulator-process button:hover { background: #e1e6e9; }
+.pw-simulator-modes button.is-active, .pw-simulator-process button.is-active { background: #16263c; color: #fff; }
+.pw-simulator-process { width: fit-content; background: transparent; }
+.pw-simulator-text-action { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 500; color: #66717b; cursor: pointer; }
+.pw-simulator-text-action:hover { color: #16263c; }
+.pw-simulator .bento-item h3 { text-transform: none; letter-spacing: 0; font-size: 14px; font-weight: 600; }
+.pw-simulator button { text-transform: none; letter-spacing: 0; }
+.pw-simulator #calculation-results .glass-card { border-radius: 7px; box-shadow: none; }
+.pw-simulator #calculation-results .tracking-widest, .pw-simulator #calculation-results .tracking-wider { letter-spacing: 0; text-transform: none; }
+@media (max-width: 600px) {
+  .pw-simulator-heading { flex-direction: column; align-items: flex-start; gap: 14px; }
+  .pw-simulator-heading .pw-secondary { padding: 9px 12px; min-height: 40px; font-size: 12px; }
+  .pw-simulator-modes button { padding: 10px 8px; gap: 5px; font-size: 12px; min-width: 120px; }
+}

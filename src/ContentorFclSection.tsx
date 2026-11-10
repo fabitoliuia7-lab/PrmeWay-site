@@ -16,9 +16,7 @@ import {
   Calculator,
   Plus,
   Trash2,
-  Copy,
-  Info,
-  Sparkles
+  Copy
 } from 'lucide-react';
 import {
   ContentorItem,
@@ -26,8 +24,8 @@ import {
   CONTENTOR_SPECS,
   ContentorType
 } from './contentorTypes';
-import { PautaLookupWidget } from './PautaLookupWidget';
-import { obterTaxasPauta } from './pautaAduaneira';
+import { ContentorTariffLookup } from './components/ContentorTariffLookup';
+import { formatHsCode, type HsTariff } from './services/hsTariffTypes';
 
 interface ContentorFclSectionProps {
   contentoresList: ContentorItem[];
@@ -37,6 +35,7 @@ interface ContentorFclSectionProps {
   duplicarContentor: (id: string) => void;
   removerContentor: (id: string) => void;
   atualizarContentorField: (id: string, field: keyof ContentorItem, value: any) => void;
+  atualizarContentorFields: (id: string, fields: Partial<ContentorItem>) => void;
   currentContentor: ContentorItem;
   calculatedItem?: ContentorCalculatedItem;
   taxaCambio: number;
@@ -52,6 +51,7 @@ export const ContentorFclSection: React.FC<ContentorFclSectionProps> = ({
   duplicarContentor,
   removerContentor,
   atualizarContentorField,
+  atualizarContentorFields,
   currentContentor,
   calculatedItem,
   taxaCambio,
@@ -69,30 +69,31 @@ export const ContentorFclSection: React.FC<ContentorFclSectionProps> = ({
     atualizarContentorField(currentContentor.id, 'transporteInlandMzn', s.inlandSugeridoMzn);
   };
 
-  const aplicarTarifaPauta = (percentual: number, codigoDesc: string) => {
-    atualizarContentorField(currentContentor.id, 'direitosPerc', percentual);
-    if (!currentContentor.codigoPautal || currentContentor.codigoPautal === '8482.10.00' || currentContentor.codigoPautal === 'Geral') {
-      atualizarContentorField(currentContentor.id, 'codigoPautal', codigoDesc);
-    }
+  const aplicarTarifaHs = (tariff: HsTariff) => {
+    const complete = [tariff.direitosPerc, tariff.icePerc, tariff.ivaPerc].every(rate => rate !== null);
+    atualizarContentorFields(currentContentor.id, {
+      codigoPautal: formatHsCode(tariff.codigo),
+      descricaoCarga: tariff.descricao,
+      direitosPerc: tariff.direitosPerc ?? '',
+      icePerc: tariff.icePerc ?? '',
+      ivaPerc: tariff.ivaPerc ?? '',
+      iceRegraPauta: tariff.iceRule ?? '',
+      pautaEstado: complete ? 'confirmada' : 'incompleta',
+    });
   };
 
-  const aplicarTarifaPautaCompleta = (tarifa: {
-    codigo: string;
-    descricao: string;
-    direitosPerc: number;
-    icePerc: number;
-    ivaPerc: number;
-    categoria?: string;
-    notas?: string;
-  }) => {
-    atualizarContentorField(currentContentor.id, 'codigoPautal', tarifa.codigo);
-    atualizarContentorField(currentContentor.id, 'direitosPerc', tarifa.direitosPerc);
-    atualizarContentorField(currentContentor.id, 'icePerc', tarifa.icePerc);
-    atualizarContentorField(currentContentor.id, 'ivaPerc', tarifa.ivaPerc);
-    if (!currentContentor.descricaoCarga || currentContentor.descricaoCarga.trim() === '') {
-      atualizarContentorField(currentContentor.id, 'descricaoCarga', tarifa.descricao);
-    }
+  const alterarCodigoHs = (value: string) => {
+    atualizarContentorFields(currentContentor.id, {
+      codigoPautal: value,
+      direitosPerc: '', icePerc: '', ivaPerc: '', iceRegraPauta: '', pautaEstado: 'pendente',
+    });
   };
+
+  const editarAliquota = (field: 'direitosPerc' | 'icePerc' | 'ivaPerc', value: string) => {
+    atualizarContentorFields(currentContentor.id, { [field]: value, pautaEstado: 'manual' });
+  };
+
+  const exibirAliquota = (value: number | string) => String(value ?? '').trim() !== '' && Number.isFinite(Number(value)) && Number(value) >= 0 && Number(value) <= 100 ? `${value}%` : 'A confirmar';
 
   const aplicarDestinoInland = (destino: string) => {
     atualizarContentorField(currentContentor.id, 'destinoInland', destino);
@@ -116,19 +117,19 @@ export const ContentorFclSection: React.FC<ContentorFclSectionProps> = ({
       <section className="bento-item !p-5 md:!p-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
           <div>
-            <h3 className="font-heading font-semibold text-xs text-corp-blue uppercase tracking-[0.3em] flex items-center gap-2">
-              <Boxes size={16} /> Contentores no Embarque ({contentoresList.length})
+            <h3 className="font-heading font-semibold text-sm text-corp-blue flex items-center gap-2">
+              <Boxes size={16} /> Contentores no embarque ({contentoresList.length})
             </h3>
             <p className="text-[11px] text-slate-500 mt-0.5">
-              Simulação FCL (Full Container Load) com desembaraço aduaneiro oficial em Moçambique.
+              FCL · volumes, pesos e custos.
             </p>
           </div>
           <button
             type="button"
             onClick={adicionarContentor}
-            className="text-xs font-bold text-corp-orange hover:text-corp-orange/80 flex items-center gap-1.5 self-start sm:self-auto uppercase tracking-wider bg-corp-orange/10 px-3 py-1.5 rounded-lg border border-corp-orange/20 cursor-pointer"
+            className="text-xs font-bold text-corp-orange hover:text-corp-orange/80 flex items-center gap-1.5 self-start sm:self-auto bg-corp-orange/10 px-3 py-1.5 rounded-lg border border-corp-orange/20 cursor-pointer"
           >
-            <Plus size={14} /> Adicionar Outro Contentor
+            <Plus size={14} /> Adicionar contentor
           </button>
         </div>
 
@@ -147,7 +148,7 @@ export const ContentorFclSection: React.FC<ContentorFclSectionProps> = ({
                 }`}
               >
                 <div className="flex items-center justify-between mb-1.5">
-                  <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-md ${
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-md ${
                     isActive ? 'bg-white/20 text-white' : 'bg-slate-200/80 text-slate-700'
                   }`}>
                     {itemSpec.nome}
@@ -180,9 +181,14 @@ export const ContentorFclSection: React.FC<ContentorFclSectionProps> = ({
                   </div>
                 </div>
 
-                <p className="font-bold text-xs truncate mb-1">
+                <button
+                  type="button"
+                  onClick={(event) => { event.stopPropagation(); setActiveContentorId(c.id); }}
+                  aria-pressed={isActive}
+                  className="block max-w-full text-left font-bold text-xs truncate mb-1 cursor-pointer"
+                >
                   #{idx + 1}: {c.descricaoCarga || 'Mercadoria Geral'}
-                </p>
+                </button>
                 <div className={`text-[10px] flex justify-between font-medium ${isActive ? 'text-white/80' : 'text-slate-500'}`}>
                   <span>FOB: ${Number(c.valorFobUsd) || 0}</span>
                   <span>Frete: ${Number(c.freteMaritimoUsd) || 0}</span>
@@ -197,18 +203,18 @@ export const ContentorFclSection: React.FC<ContentorFclSectionProps> = ({
       {/* 1. Escolha do Modelo de Contentor & Dados Básicos */}
       <section className="bento-item !p-6 md:!p-8">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-6">
-          <h3 className="font-heading font-semibold text-xs text-corp-blue uppercase tracking-[0.3em] flex items-center gap-3">
+          <h3 className="font-heading font-semibold text-sm text-corp-blue flex items-center gap-3">
             <span className="w-6 h-6 rounded-md bg-corp-blue/5 flex items-center justify-center text-[10px] font-bold text-corp-blue">01</span>
-            Especificações do Contentor & Carga
+            Especificações do contentor e carga
           </h3>
-          <span className="text-[11px] font-bold text-slate-500 bg-slate-100 px-3 py-1 rounded-full">
-            Capacidade Útil: {spec.capacidadeCbm} m³ | Carga Máx: {(spec.capacidadeCargaKg / 1000).toFixed(1)} Toneladas
+          <span className="text-[11px] font-semibold text-slate-600 bg-slate-100 px-3 py-1 rounded-full">
+            {spec.capacidadeCbm} m³ · máximo {(spec.capacidadeCargaKg / 1000).toFixed(1)} t
           </span>
         </div>
 
         {/* Container Selector Pills */}
         <div className="mb-6">
-          <label className="label-corp mb-2 block">Selecione o Modelo de Contentor Marítimo:</label>
+          <label className="label-corp mb-2 block">Modelo do contentor</label>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
             {(Object.keys(CONTENTOR_SPECS) as ContentorType[]).map((tipoKey) => {
               const s = CONTENTOR_SPECS[tipoKey];
@@ -235,54 +241,32 @@ export const ContentorFclSection: React.FC<ContentorFclSectionProps> = ({
               );
             })}
           </div>
-          <div className="bg-blue-50/70 border border-blue-200/60 rounded-xl p-3 mt-3 flex items-start gap-2.5 text-xs text-blue-900">
-            <Info size={16} className="text-corp-blue shrink-0 mt-0.5" />
-            <div>
-              <span className="font-bold">{spec.nome}: </span>
-              {spec.descricao} Medidas internas: {spec.dimensoesInternas}.
-            </div>
-          </div>
+          <details className="mt-3 border-t border-slate-200 pt-3 text-xs text-slate-600">
+            <summary className="cursor-pointer font-medium text-corp-blue">Especificações do contentor</summary>
+            <p className="pt-2">
+              <span className="font-semibold text-slate-800">{spec.nome}: </span>
+              {spec.descricao} Dimensões internas: {spec.dimensoesInternas}.
+            </p>
+          </details>
         </div>
 
         {/* Inputs Básicos do Contentor */}
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
           <div className="sm:col-span-2">
-            <div className="flex items-center justify-between mb-1">
-              <label className="label-corp !mb-0">Descrição da Mercadoria / Carga</label>
-              <button
-                type="button"
-                onClick={() => {
-                  const query = currentContentor.descricaoCarga || currentContentor.codigoPautal;
-                  if (query) {
-                    const res = obterTaxasPauta(query);
-                    aplicarTarifaPautaCompleta(res);
-                  }
-                }}
-                className="text-[9px] font-bold text-corp-blue hover:text-corp-blue-light flex items-center gap-1 cursor-pointer bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded border border-blue-200 transition-colors"
-                title="Puxar código e taxas da Pauta Aduaneira automaticamente"
-              >
-                <Sparkles size={10} className="text-amber-500 animate-pulse" /> Puxar da Pauta
-              </button>
-            </div>
+            <label className="label-corp">Descrição da carga</label>
             <input
               type="text"
               value={currentContentor.descricaoCarga}
               onChange={(e) => atualizarContentorField(currentContentor.id, 'descricaoCarga', e.target.value)}
-              onBlur={() => {
-                if (currentContentor.descricaoCarga && currentContentor.descricaoCarga.trim().length >= 3) {
-                  const res = obterTaxasPauta(currentContentor.descricaoCarga);
-                  if (res.encontrado) {
-                    aplicarTarifaPautaCompleta(res);
-                  }
-                }
-              }}
               className="input-modern"
-              placeholder="Ex: Rolamentos Industriais, Geradores, Painéis Solares, Camião..."
+              placeholder="Descrição da mercadoria"
+              aria-label="Descrição da carga"
             />
+            <p className="text-[11px] text-slate-500 mt-2">O código HS preenche-a quando disponível.</p>
           </div>
 
           <div>
-            <label className="label-corp">Quantidade de Contentores</label>
+            <label className="label-corp">Quantidade (contentores)</label>
             <input
               type="number"
               min="1"
@@ -295,53 +279,7 @@ export const ContentorFclSection: React.FC<ContentorFclSectionProps> = ({
           </div>
 
           <div>
-            <div className="flex items-center justify-between mb-1">
-              <label className="label-corp !mb-0">Código Pautal / HS Code</label>
-              <button
-                type="button"
-                onClick={() => {
-                  const query = currentContentor.codigoPautal || currentContentor.descricaoCarga;
-                  if (query) {
-                    const res = obterTaxasPauta(query);
-                    aplicarTarifaPautaCompleta(res);
-                  }
-                }}
-                className="text-[9px] font-bold text-amber-700 hover:text-amber-800 flex items-center gap-1 cursor-pointer bg-amber-50 hover:bg-amber-100 px-2 py-0.5 rounded border border-amber-300 transition-colors"
-                title="Auto-detectar taxas da pauta para este código ou descrição"
-              >
-                <Sparkles size={10} className="text-amber-500" /> Auto-Taxas
-              </button>
-            </div>
-            <input
-              type="text"
-              value={currentContentor.codigoPautal}
-              onChange={(e) => {
-                const val = e.target.value;
-                atualizarContentorField(currentContentor.id, 'codigoPautal', val);
-                if (val && val.trim().length >= 4) {
-                  const res = obterTaxasPauta(val);
-                  if (res.encontrado) {
-                    atualizarContentorField(currentContentor.id, 'direitosPerc', res.direitosPerc);
-                    atualizarContentorField(currentContentor.id, 'icePerc', res.icePerc);
-                    atualizarContentorField(currentContentor.id, 'ivaPerc', res.ivaPerc);
-                  }
-                }
-              }}
-              onBlur={() => {
-                if (currentContentor.codigoPautal && currentContentor.codigoPautal.trim().length >= 3) {
-                  const res = obterTaxasPauta(currentContentor.codigoPautal);
-                  if (res.encontrado) {
-                    aplicarTarifaPautaCompleta(res);
-                  }
-                }
-              }}
-              className="input-modern"
-              placeholder="Ex: 8482.10.00 ou 8502"
-            />
-          </div>
-
-          <div>
-            <label className="label-corp">Peso Total da Carga (Kg)</label>
+            <label className="label-corp">Peso total (kg)</label>
             <input
               type="number"
               step="any"
@@ -353,10 +291,13 @@ export const ContentorFclSection: React.FC<ContentorFclSectionProps> = ({
             <span className="text-[10px] text-slate-400 mt-1 block">
               = {((Number(currentContentor.pesoTotalKg) || 0) / 1000).toFixed(2)} Toneladas (Máx: {(spec.capacidadeCargaKg / 1000).toFixed(1)}t)
             </span>
+            {Number(currentContentor.pesoTotalKg) > spec.capacidadeCargaKg && (
+              <p role="alert" className="mt-2 text-xs text-amber-800">Peso acima do limite deste contentor. Confirme a carga.</p>
+            )}
           </div>
 
           <div>
-            <label className="label-corp">Volume Real Ocupado (CBM)</label>
+            <label className="label-corp">Volume (CBM)</label>
             <input
               type="number"
               step="any"
@@ -366,8 +307,11 @@ export const ContentorFclSection: React.FC<ContentorFclSectionProps> = ({
               placeholder="Ex: 28"
             />
             <span className="text-[10px] text-slate-400 mt-1 block">
-              Capacidade do contentor: {spec.capacidadeCbm} m³
+              Capacidade: {spec.capacidadeCbm} m³
             </span>
+            {Number(currentContentor.volumeUtilizadoCbm) > spec.capacidadeCbm && (
+              <p role="alert" className="mt-2 text-xs text-amber-800">Volume acima da capacidade deste contentor. Confirme a carga.</p>
+            )}
           </div>
 
           <div>
@@ -382,7 +326,7 @@ export const ContentorFclSection: React.FC<ContentorFclSectionProps> = ({
           </div>
 
           <div>
-            <label className="label-corp">Porto de Destino em Moçambique</label>
+            <label className="label-corp">Porto de destino</label>
             <select
               value={currentContentor.portoDestino}
               onChange={(e) => atualizarContentorField(currentContentor.id, 'portoDestino', e.target.value)}
@@ -399,9 +343,9 @@ export const ContentorFclSection: React.FC<ContentorFclSectionProps> = ({
       {/* 2. Valores Comerciais & Frete Internacional FCL (USD) */}
       <section className="bento-item !p-6 md:!p-8">
         <div className="flex items-center justify-between mb-6">
-          <h3 className="font-heading font-semibold text-xs text-corp-blue uppercase tracking-[0.3em] flex items-center gap-3">
+          <h3 className="font-heading font-semibold text-sm text-corp-blue flex items-center gap-3">
             <span className="w-6 h-6 rounded-md bg-corp-blue/5 flex items-center justify-center text-[10px] font-bold text-corp-blue">02</span>
-            Valores Comerciais & Frete Internacional (USD)
+            Compra e frete internacional
           </h3>
           <span className="text-[11px] text-emerald-700 font-bold bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">
             Câmbio: 1 USD = {taxaCambio} MZN
@@ -409,8 +353,8 @@ export const ContentorFclSection: React.FC<ContentorFclSectionProps> = ({
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
-          <div className="bg-slate-50/70 p-4 rounded-xl border border-slate-200/80">
-            <label className="label-corp">Valor da Mercadoria FOB (USD)</label>
+          <div className="border-b border-slate-200 pb-3">
+            <label className="label-corp">Valor da mercadoria FOB (USD)</label>
             <div className="relative mt-1">
               <span className="absolute left-3 top-2.5 text-slate-400 font-bold text-xs">$</span>
               <input
@@ -434,8 +378,8 @@ export const ContentorFclSection: React.FC<ContentorFclSectionProps> = ({
             </span>
           </div>
 
-          <div className="bg-slate-50/70 p-4 rounded-xl border border-slate-200/80">
-            <label className="label-corp">Frete Marítimo FCL por Contentor (USD)</label>
+          <div className="border-b border-slate-200 pb-3">
+            <label className="label-corp">Frete marítimo por contentor (USD)</label>
             <div className="relative mt-1">
               <span className="absolute left-3 top-2.5 text-slate-400 font-bold text-xs">$</span>
               <input
@@ -458,8 +402,8 @@ export const ContentorFclSection: React.FC<ContentorFclSectionProps> = ({
             </div>
           </div>
 
-          <div className="bg-slate-50/70 p-4 rounded-xl border border-slate-200/80">
-            <label className="label-corp">Seguro Marítimo Internacional (USD)</label>
+          <div className="border-b border-slate-200 pb-3">
+            <label className="label-corp">Seguro marítimo (USD)</label>
             <div className="relative mt-1">
               <span className="absolute left-3 top-2.5 text-slate-400 font-bold text-xs">$</span>
               <input
@@ -479,13 +423,13 @@ export const ContentorFclSection: React.FC<ContentorFclSectionProps> = ({
 
         {/* Resumo do Valor Aduaneiro CIF */}
         {calculatedItem && (
-          <div className="mt-4 bg-gradient-to-r from-blue-900 to-slate-900 text-white p-4 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div className="mt-4 bg-corp-blue text-white p-4 rounded-xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
             <div>
-              <p className="text-[10px] uppercase tracking-wider text-blue-200 font-semibold">
-                Valor Aduaneiro Oficial (CIF Porto de Entrada)
+              <p className="text-[10px] text-blue-200 font-semibold">
+                Valor aduaneiro CIF
               </p>
               <p className="text-xs text-slate-300">
-                Base legal para o cálculo dos Direitos Aduaneiros e do IVA das Alfândegas de Moçambique.
+                Base usada nos direitos e no IVA.
               </p>
             </div>
             <div className="text-right">
@@ -500,150 +444,75 @@ export const ContentorFclSection: React.FC<ContentorFclSectionProps> = ({
         )}
       </section>
 
-      {/* 3. PARTE 1: Impostos e Despesas do Estado (Pauta Aduaneira de Moçambique) */}
-      <section className="bento-item !p-6 md:!p-8 border-l-4 border-l-amber-500">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-6">
+      {/* 3. Parte 1: consulta HS e impostos */}
+      <section id="contentor-impostos" className="bento-item !p-6 md:!p-8">
+        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 mb-5">
           <div>
-            <span className="text-[10px] font-bold text-amber-800 uppercase tracking-widest bg-amber-100 px-2 py-0.5 rounded-full inline-block mb-1">
-              Parte 1 da Fatura Oficial
-            </span>
-            <h3 className="font-heading font-semibold text-xs text-corp-blue uppercase tracking-[0.3em] flex items-center gap-3">
-              <Landmark size={16} /> Impostos Aduaneiros & Taxas do Estado (DU Oficial)
+            <p className="text-[11px] text-slate-500 mb-2">Parte 1 · Estimativa de impostos</p>
+            <h3 className="font-heading font-semibold text-base text-corp-blue flex items-center gap-2">
+              <Landmark size={17} aria-hidden="true" /> Impostos aduaneiros e taxas do Estado
             </h3>
           </div>
-          {calculatedItem && (
-            <span className="text-sm font-bold text-amber-700 bg-amber-50 px-3 py-1 rounded-xl border border-amber-200">
-              Subtotal Estado: {formatoMoeda(calculatedItem.subtotalAlfandegaMzn)} MZN (${formatoMoeda(calculatedItem.subtotalAlfandegaUsd)} USD)
-            </span>
-          )}
+          {calculatedItem && <p className="text-sm font-semibold text-corp-blue">Subtotal Estado: {calculatedItem.taxasPendentes ? 'A confirmar' : `${formatoMoeda(calculatedItem.subtotalAlfandegaMzn)} MZN`}</p>}
         </div>
 
-        {/* Consulta & Automação da Pauta Aduaneira de Moçambique */}
-        <div className="mb-6">
-          <PautaLookupWidget
-            codigoAtual={currentContentor.codigoPautal}
-            descricaoAtual={currentContentor.descricaoCarga}
-            direitosAtual={currentContentor.direitosPerc}
-            iceAtual={currentContentor.icePerc}
-            ivaAtual={currentContentor.ivaPerc}
-            onSelectTarifa={aplicarTarifaPautaCompleta}
-            modo="contentor"
-          />
-        </div>
+        <ContentorTariffLookup
+          contentorId={currentContentor.id}
+          codigo={currentContentor.codigoPautal}
+          manual={currentContentor.pautaEstado === 'manual'}
+          onCodigoChange={alterarCodigoHs}
+          onTariff={aplicarTarifaHs}
+          onPending={() => atualizarContentorFields(currentContentor.id, { pautaEstado: 'pendente' })}
+          onUnavailable={() => atualizarContentorFields(currentContentor.id, { pautaEstado: 'nao_encontrada' })}
+        />
 
-        {/* Inputs de Impostos */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 mb-6">
-          <div>
-            <label className="label-corp">Direitos Aduaneiros (%)</label>
-            <input
-              type="number"
-              step="any"
-              value={currentContentor.direitosPerc}
-              onChange={(e) => atualizarContentorField(currentContentor.id, 'direitosPerc', e.target.value)}
-              className="input-modern"
-              placeholder="Ex: 5 ou 20"
-            />
-            {calculatedItem && (
-              <span className="text-[10px] text-slate-500 mt-1 block">
-                = MZN {formatoMoeda(calculatedItem.direitosMzn)} ({currentContentor.direitosPerc}% do CIF)
-              </span>
-            )}
-          </div>
+        <dl className="grid grid-cols-1 sm:grid-cols-3 gap-4 mt-5 py-4 border-y border-slate-200">
+          <div><dt className="text-xs text-slate-500 mb-1">Direitos aduaneiros</dt><dd className="font-heading font-semibold text-lg text-corp-blue">{exibirAliquota(currentContentor.direitosPerc)}</dd></div>
+          <div><dt className="text-xs text-slate-500 mb-1">ICE</dt><dd className="font-heading font-semibold text-lg text-corp-blue">{exibirAliquota(currentContentor.icePerc)}</dd></div>
+          <div><dt className="text-xs text-slate-500 mb-1">IVA alfandegário</dt><dd className="font-heading font-semibold text-lg text-corp-blue">{exibirAliquota(currentContentor.ivaPerc)}</dd></div>
+        </dl>
 
-          <div>
-            <label className="label-corp">ICE - Imposto Consumos Específicos (%)</label>
-            <input
-              type="number"
-              step="any"
-              value={currentContentor.icePerc}
-              onChange={(e) => atualizarContentorField(currentContentor.id, 'icePerc', e.target.value)}
-              className="input-modern"
-              placeholder="0"
-            />
-            {calculatedItem && (
-              <span className="text-[10px] text-slate-500 mt-1 block">
-                = MZN {formatoMoeda(calculatedItem.iceMzn)}
-              </span>
-            )}
-          </div>
-
-          <div>
-            <label className="label-corp">IVA Alfandegário (%)</label>
-            <input
-              type="number"
-              step="any"
-              value={currentContentor.ivaPerc}
-              onChange={(e) => atualizarContentorField(currentContentor.id, 'ivaPerc', e.target.value)}
-              className="input-modern"
-              placeholder="16"
-            />
-            {calculatedItem && (
-              <span className="text-[10px] text-slate-500 mt-1 block">
-                = MZN {formatoMoeda(calculatedItem.ivaMzn)} (16% sobre CIF + DA + ICE)
-              </span>
-            )}
-          </div>
-        </div>
-
-        {/* Taxas Aduaneiras Regulamentares */}
-        <div className="bg-amber-50/50 p-4 rounded-xl border border-amber-200/70">
-          <p className="text-[10px] font-bold text-amber-900 uppercase tracking-wider mb-3">
-            Taxas Aduaneiras Regulamentares Oficiais (Por Contentor / DU):
-          </p>
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div>
-              <label className="label-corp">TSA - Taxa Serviços Aduaneiros (MZN)</label>
-              <input
-                type="number"
-                step="any"
-                value={currentContentor.tsaAduaneiroMzn}
-                onChange={(e) => atualizarContentorField(currentContentor.id, 'tsaAduaneiroMzn', e.target.value)}
-                className="input-modern"
-                placeholder="1250"
-              />
-              <span className="text-[9px] text-slate-400 mt-1 block">Oficial das Alfândegas de Moçambique</span>
+        <details className="mt-4 group">
+          <summary className="text-xs font-medium text-corp-blue cursor-pointer py-2">Confirmar ou ajustar alíquotas e taxas de processamento</summary>
+          <div className="pt-4 space-y-5">
+            <p className="text-[11px] text-slate-500">A edição manual mantém os seus valores. Uma alíquota em branco na base não significa 0% nem isenção.</p>
+            {currentContentor.iceRegraPauta && <p className="text-xs text-amber-800">ICE na pauta: {currentContentor.iceRegraPauta}. Este simulador usa percentagens; uma percentagem equivalente tem de ser confirmada pelo despachante, pois esta regra não é convertida automaticamente.</p>}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <label className="label-corp" htmlFor={`da-${currentContentor.id}`}>Direitos aduaneiros (%)</label>
+                <input id={`da-${currentContentor.id}`} type="number" min="0" max="100" step="any" value={currentContentor.direitosPerc} onChange={event => editarAliquota('direitosPerc', event.target.value)} className="input-modern" placeholder="A confirmar" />
+                {calculatedItem && <p className="text-[11px] text-slate-500 mt-1">Base: valor CIF.</p>}
+              </div>
+              <div>
+                <label className="label-corp" htmlFor={`ice-${currentContentor.id}`}>ICE (%)</label>
+                <input id={`ice-${currentContentor.id}`} type="number" min="0" max="100" step="any" value={currentContentor.icePerc} onChange={event => editarAliquota('icePerc', event.target.value)} className="input-modern" placeholder="A confirmar" />
+                <p className="text-[11px] text-slate-500 mt-1">Base: CIF + direitos aduaneiros.</p>
+              </div>
+              <div>
+                <label className="label-corp" htmlFor={`iva-${currentContentor.id}`}>IVA alfandegário (%)</label>
+                <input id={`iva-${currentContentor.id}`} type="number" min="0" max="100" step="any" value={currentContentor.ivaPerc} onChange={event => editarAliquota('ivaPerc', event.target.value)} className="input-modern" placeholder="A confirmar" />
+                <p className="text-[11px] text-slate-500 mt-1">Base: CIF + direitos aduaneiros + ICE.</p>
+              </div>
             </div>
-
-            <div>
-              <label className="label-corp">MCNET - Janela Única Eletrónica (MZN)</label>
-              <input
-                type="number"
-                step="any"
-                value={currentContentor.mcnetMzn}
-                onChange={(e) => atualizarContentorField(currentContentor.id, 'mcnetMzn', e.target.value)}
-                className="input-modern"
-                placeholder="1550"
-              />
-              <span className="text-[9px] text-slate-400 mt-1 block">Processamento eletrónico JUE/DU</span>
-            </div>
-
-            <div>
-              <label className="label-corp">Kudumba - Scanner FCL (MZN)</label>
-              <input
-                type="number"
-                step="any"
-                value={currentContentor.kudumbaMzn}
-                onChange={(e) => atualizarContentorField(currentContentor.id, 'kudumbaMzn', e.target.value)}
-                className="input-modern"
-                placeholder="3850"
-              />
-              <span className="text-[9px] text-slate-400 mt-1 block">
-                Scanner {spec.nome.includes('20') ? "20' (3.850 MT)" : "40' (6.200 MT)"}
-              </span>
+            <div className="border-t border-slate-200 pt-4">
+              <p className="text-xs font-medium text-slate-700 mb-1">Taxas de processamento (por contentor / DU)</p>
+              <p className="text-[11px] text-slate-500 mb-3">Dependem da operação e não são determinadas pelo código HS. Confirme os valores antes do despacho.</p>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div><label htmlFor={`tsa-${currentContentor.id}`} className="label-corp">TSA — serviços aduaneiros (MZN)</label><input id={`tsa-${currentContentor.id}`} type="number" min="0" step="any" value={currentContentor.tsaAduaneiroMzn} onChange={event => atualizarContentorField(currentContentor.id, 'tsaAduaneiroMzn', event.target.value)} className="input-modern" /></div>
+                <div><label htmlFor={`mcnet-${currentContentor.id}`} className="label-corp">MCNET — Janela Única (MZN)</label><input id={`mcnet-${currentContentor.id}`} type="number" min="0" step="any" value={currentContentor.mcnetMzn} onChange={event => atualizarContentorField(currentContentor.id, 'mcnetMzn', event.target.value)} className="input-modern" /></div>
+                <div><label htmlFor={`kudumba-${currentContentor.id}`} className="label-corp">Kudumba — scanner (MZN)</label><input id={`kudumba-${currentContentor.id}`} type="number" min="0" step="any" value={currentContentor.kudumbaMzn} onChange={event => atualizarContentorField(currentContentor.id, 'kudumbaMzn', event.target.value)} className="input-modern" /></div>
+              </div>
             </div>
           </div>
-        </div>
+        </details>
       </section>
 
       {/* 4. PARTE 2: Taxas Portuárias e Terminais (DP World / Cornelder) */}
       <section className="bento-item !p-6 md:!p-8 border-l-4 border-l-blue-600">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-6">
           <div>
-            <span className="text-[10px] font-bold text-blue-800 uppercase tracking-widest bg-blue-100 px-2 py-0.5 rounded-full inline-block mb-1">
-              Parte 2 da Fatura Oficial
-            </span>
-            <h3 className="font-heading font-semibold text-xs text-corp-blue uppercase tracking-[0.3em] flex items-center gap-3">
-              <Anchor size={16} /> Taxas Portuárias & Terminal de Contentores (DP World / Cornelder)
+            <h3 className="font-heading font-semibold text-sm text-corp-blue flex items-center gap-3">
+              <Anchor size={16} /> Porto e terminais
             </h3>
           </div>
           {calculatedItem && (
@@ -655,7 +524,7 @@ export const ContentorFclSection: React.FC<ContentorFclSectionProps> = ({
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
-            <label className="label-corp">THC Portuário - Descarga e Movimentação (MZN)</label>
+            <label className="label-corp">THC portuário (MZN)</label>
             <input
               type="number"
               step="any"
@@ -665,12 +534,12 @@ export const ContentorFclSection: React.FC<ContentorFclSectionProps> = ({
               placeholder="14500"
             />
             <span className="text-[10px] text-slate-400 mt-1 block">
-              Terminal Handling Charge ({spec.nome.includes('20') ? "20' ~14.500 MT" : "40' ~24.500 MT"})
+              Descarga e movimentação · {spec.nome.includes('20') ? "20' ~14.500 MT" : "40' ~24.500 MT"}
             </span>
           </div>
 
           <div>
-            <label className="label-corp">Segurança Portuária & Liberação ISPS (MZN)</label>
+            <label className="label-corp">Segurança portuária (MZN)</label>
             <input
               type="number"
               step="any"
@@ -679,11 +548,11 @@ export const ContentorFclSection: React.FC<ContentorFclSectionProps> = ({
               className="input-modern"
               placeholder="3500"
             />
-            <span className="text-[10px] text-slate-400 mt-1 block">Port Security & Terminal Release</span>
+            <span className="text-[10px] text-slate-400 mt-1 block">ISPS e liberação.</span>
           </div>
 
           <div>
-            <label className="label-corp">Armazenagem Portuária Prevista (MZN)</label>
+            <label className="label-corp">Armazenagem portuária (MZN)</label>
             <input
               type="number"
               step="any"
@@ -693,7 +562,7 @@ export const ContentorFclSection: React.FC<ContentorFclSectionProps> = ({
               placeholder="0"
             />
             <span className="text-[10px] text-slate-400 mt-1 block">
-              Franquia de 10 dias livres. 0 MT se despachado a tempo.
+              Valor previsto; 0 se não aplicável.
             </span>
           </div>
         </div>
@@ -703,11 +572,8 @@ export const ContentorFclSection: React.FC<ContentorFclSectionProps> = ({
       <section className="bento-item !p-6 md:!p-8 border-l-4 border-l-indigo-600">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-6">
           <div>
-            <span className="text-[10px] font-bold text-indigo-800 uppercase tracking-widest bg-indigo-100 px-2 py-0.5 rounded-full inline-block mb-1">
-              Parte 3 da Fatura Oficial
-            </span>
-            <h3 className="font-heading font-semibold text-xs text-corp-blue uppercase tracking-[0.3em] flex items-center gap-3">
-              <Ship size={16} /> Linha de Navegação & Agência Marítima (Maersk, MSC, COSCO)
+            <h3 className="font-heading font-semibold text-sm text-corp-blue flex items-center gap-3">
+              <Ship size={16} /> Linha de navegação
             </h3>
           </div>
           {calculatedItem && (
@@ -719,7 +585,7 @@ export const ContentorFclSection: React.FC<ContentorFclSectionProps> = ({
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
-            <label className="label-corp">D.O. - Delivery Order / Liberação de BL (MZN)</label>
+            <label className="label-corp">Delivery Order (MZN)</label>
             <input
               type="number"
               step="any"
@@ -728,11 +594,11 @@ export const ContentorFclSection: React.FC<ContentorFclSectionProps> = ({
               className="input-modern"
               placeholder="8500"
             />
-            <span className="text-[10px] text-slate-400 mt-1 block">Taxa de emissão da ordem de entrega marítima</span>
+            <span className="text-[10px] text-slate-400 mt-1 block">Liberação do BL.</span>
           </div>
 
           <div>
-            <label className="label-corp">Limpeza & Desmagnetização do Contentor (MZN)</label>
+            <label className="label-corp">Limpeza do contentor (MZN)</label>
             <input
               type="number"
               step="any"
@@ -741,11 +607,11 @@ export const ContentorFclSection: React.FC<ContentorFclSectionProps> = ({
               className="input-modern"
               placeholder="4500"
             />
-            <span className="text-[10px] text-slate-400 mt-1 block">Container washing & inspection fee</span>
+            <span className="text-[10px] text-slate-400 mt-1 block">Lavagem e inspeção.</span>
           </div>
 
           <div>
-            <label className="label-corp">Caução / Seguro Contentor Vazio (MZN)</label>
+            <label className="label-corp">Caução do contentor (MZN)</label>
             <input
               type="number"
               step="any"
@@ -754,7 +620,7 @@ export const ContentorFclSection: React.FC<ContentorFclSectionProps> = ({
               className="input-modern"
               placeholder="6000"
             />
-            <span className="text-[10px] text-slate-400 mt-1 block">Seguro de demoras / devolução de vazio</span>
+            <span className="text-[10px] text-slate-400 mt-1 block">Devolução do vazio.</span>
           </div>
         </div>
       </section>
@@ -763,11 +629,8 @@ export const ContentorFclSection: React.FC<ContentorFclSectionProps> = ({
       <section className="bento-item !p-6 md:!p-8 border-l-4 border-l-emerald-600">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-6">
           <div>
-            <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-widest bg-emerald-100 px-2 py-0.5 rounded-full inline-block mb-1">
-              Parte 4 da Fatura Oficial
-            </span>
-            <h3 className="font-heading font-semibold text-xs text-corp-blue uppercase tracking-[0.3em] flex items-center gap-3">
-              <Truck size={16} /> Despachante Aduaneiro, Transporte Terrestre & PrimeWay
+            <h3 className="font-heading font-semibold text-sm text-corp-blue flex items-center gap-3">
+              <Truck size={16} /> Despacho e entrega
             </h3>
           </div>
           {calculatedItem && (
@@ -780,7 +643,7 @@ export const ContentorFclSection: React.FC<ContentorFclSectionProps> = ({
         {/* Despachante & Documentos */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
           <div>
-            <label className="label-corp">Honorários do Despachante Aduaneiro Oficial (MZN)</label>
+            <label className="label-corp">Honorários do despachante (MZN)</label>
             <input
               type="number"
               step="any"
@@ -790,12 +653,12 @@ export const ContentorFclSection: React.FC<ContentorFclSectionProps> = ({
               placeholder="22000"
             />
             <span className="text-[10px] text-slate-400 mt-1 block">
-              Desembaraço aduaneiro completo, vistoria física e encerramento de DU
+              Despacho e vistoria.
             </span>
           </div>
 
           <div>
-            <label className="label-corp">Pastas Aduaneiras & Comunicações (MZN)</label>
+            <label className="label-corp">Documentação (MZN)</label>
             <input
               type="number"
               step="any"
@@ -804,34 +667,34 @@ export const ContentorFclSection: React.FC<ContentorFclSectionProps> = ({
               className="input-modern"
               placeholder="3500"
             />
-            <span className="text-[10px] text-slate-400 mt-1 block">Expediente, impressos e arquivo fiscal</span>
+            <span className="text-[10px] text-slate-400 mt-1 block">Arquivo e expediente.</span>
           </div>
         </div>
 
         {/* Transporte Inland / Camião Porta-Contentores */}
         <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 mb-6">
           <label className="label-corp mb-2 block">
-            Transporte Terrestre Porta-Contentores (Camião com semi-reboque porta-contentor):
+            Transporte terrestre
           </label>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div className="sm:col-span-2">
-              <label className="text-[11px] font-bold text-slate-600 block mb-1">Destino de Entrega Inland:</label>
+              <label className="text-[11px] font-bold text-slate-600 block mb-1">Destino de entrega</label>
               <select
                 value={currentContentor.destinoInland}
                 onChange={(e) => aplicarDestinoInland(e.target.value)}
                 className="input-modern cursor-pointer"
               >
-                <option value="maputo_matola">Grande Maputo & Matola (Porto de Maputo → Armazém)</option>
+                <option value="maputo_matola">Grande Maputo e Matola</option>
                 <option value="boane">Boane / Moamba / Marracuene / Ressano Garcia</option>
-                <option value="beira_dondo">Grande Beira & Dondo (Porto da Beira → Armazém)</option>
-                <option value="nacala">Nacala / Nampula (Porto de Nacala → Armazém)</option>
-                <option value="retirada_porto">Sem Transporte Inland (Levantamento no Porto pelo Cliente)</option>
-                <option value="manual">Outro Destino (Valor Personalizado)</option>
+                <option value="beira_dondo">Grande Beira e Dondo</option>
+                <option value="nacala">Nacala / Nampula</option>
+                <option value="retirada_porto">Levantamento no porto</option>
+                <option value="manual">Outro destino</option>
               </select>
             </div>
 
             <div>
-              <label className="text-[11px] font-bold text-slate-600 block mb-1">Custo do Frete Terrestre (MZN):</label>
+              <label className="text-[11px] font-bold text-slate-600 block mb-1">Transporte terrestre (MZN)</label>
               <input
                 type="number"
                 step="any"
@@ -841,7 +704,7 @@ export const ContentorFclSection: React.FC<ContentorFclSectionProps> = ({
                 placeholder="24000"
               />
               <span className="text-[9px] text-slate-400 mt-1 block">
-                Por contentor ({spec.nome.includes('20') ? '20 pés' : '40 pés'})
+                Por contentor · {spec.nome.includes('20') ? '20 pés' : '40 pés'}
               </span>
             </div>
           </div>
@@ -851,13 +714,10 @@ export const ContentorFclSection: React.FC<ContentorFclSectionProps> = ({
         <div className="bg-emerald-50/70 p-5 rounded-xl border border-emerald-200/80">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
             <div>
-              <h4 className="text-xs font-bold text-emerald-950 uppercase tracking-wide flex items-center gap-2">
-                <BadgePercent size={16} className="text-emerald-700" />
-                Honorários de Assessoria & Agenciamento PrimeWay
+                <h4 className="text-xs font-bold text-emerald-950 flex items-center gap-2">
+                  <BadgePercent size={16} className="text-emerald-700" />
+                Assessoria PrimeWay
               </h4>
-              <p className="text-[11px] text-emerald-800">
-                Valor negociável por operação para coordenação internacional, acompanhamento portuário e encerramento cambial bancário.
-              </p>
             </div>
             <div className="flex bg-white rounded-lg p-0.5 border border-emerald-300">
               <button
@@ -869,7 +729,7 @@ export const ContentorFclSection: React.FC<ContentorFclSectionProps> = ({
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                Valor Fixo (MZN)
+                Fixo (MZN)
               </button>
               <button
                 type="button"
@@ -880,7 +740,7 @@ export const ContentorFclSection: React.FC<ContentorFclSectionProps> = ({
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                Comissão (% sobre CIF)
+                % sobre CIF
               </button>
             </div>
           </div>
@@ -898,7 +758,7 @@ export const ContentorFclSection: React.FC<ContentorFclSectionProps> = ({
                   placeholder="15000"
                 />
                 <span className="text-[10px] text-emerald-700 mt-1 block">
-                  Valor acordado na negociação com o cliente
+                  Valor definido por operação.
                 </span>
               </div>
             ) : (
@@ -926,27 +786,19 @@ export const ContentorFclSection: React.FC<ContentorFclSectionProps> = ({
       </section>
 
       {/* 7. PAINEL DE INTELIGÊNCIA ESTRATÉGICA: Custo por CBM & FCL vs LCL (Grupagem) */}
-      {calculatedItem && (
-        <section className="bento-item !p-6 md:!p-8 bg-gradient-to-br from-slate-900 via-slate-800 to-corp-blue text-white shadow-xl">
-          <div className="flex items-center gap-3 mb-6">
-            <div className="w-10 h-10 rounded-xl bg-corp-orange/20 border border-corp-orange/40 flex items-center justify-center text-corp-orange">
-              <TrendingUp size={22} />
-            </div>
-            <div>
-              <h3 className="font-heading font-bold text-base uppercase tracking-wider text-white">
-                Análise Estratégica & Comparativo: Contentor Inteiro (FCL) vs Grupagem (LCL)
-              </h3>
-              <p className="text-xs text-slate-300">
-                Apoio à decisão para clientes: quando compensa fechar um contentor e quando compensa a grupagem.
-              </p>
-            </div>
-          </div>
+      {calculatedItem && !calculatedItem.taxasPendentes && (
+        <details className="bento-item !p-6 md:!p-8 bg-corp-blue text-white">
+          <summary className="list-none cursor-pointer flex items-center gap-3 font-heading font-semibold text-sm">
+            <TrendingUp size={18} className="text-corp-orange" />
+            <span>Ver análise de custos</span>
+          </summary>
+          <div className="pt-5">
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
             {/* Custo Efetivo por CBM */}
-            <div className="bg-white/10 backdrop-blur-md rounded-2xl p-5 border border-white/15">
-              <p className="text-[10px] font-bold text-slate-300 uppercase tracking-widest mb-1">
-                Custo Efetivo por Metro Cúbico (CBM)
+            <div className="border border-white/15 rounded-lg p-4">
+              <p className="text-[10px] font-semibold text-slate-300 mb-1">
+                Custo por CBM
               </p>
               <p className="text-3xl font-black font-heading text-corp-orange">
                 ${formatoMoeda(calculatedItem.custoPorCbmUsd)} USD
@@ -955,14 +807,14 @@ export const ContentorFclSection: React.FC<ContentorFclSectionProps> = ({
                 = {formatoMoeda(calculatedItem.custoPorCbmMzn)} MZN por m³
               </p>
               <div className="mt-3 pt-3 border-t border-white/10 text-[11px] text-slate-300">
-                Calculado com base em <strong className="text-white">{calculatedItem.volumeUtilizadoCbm} m³</strong> faturados num contentor de {spec.capacidadeCbm} m³.
+                Base: <strong className="text-white">{calculatedItem.volumeUtilizadoCbm} m³</strong> de {spec.capacidadeCbm} m³.
               </div>
             </div>
 
             {/* Taxa de Ocupação */}
-            <div className="bg-white/10 backdrop-blur-md rounded-2xl p-5 border border-white/15">
-              <p className="text-[10px] font-bold text-slate-300 uppercase tracking-widest mb-1">
-                Taxa de Ocupação do Contentor
+            <div className="border border-white/15 rounded-lg p-4">
+              <p className="text-[10px] font-semibold text-slate-300 mb-1">
+                Ocupação do contentor
               </p>
               <div className="flex items-baseline gap-2">
                 <span className="text-3xl font-black font-heading text-white">
@@ -987,87 +839,80 @@ export const ContentorFclSection: React.FC<ContentorFclSectionProps> = ({
               </div>
               <p className="text-[10px] text-slate-300 mt-2">
                 {calculatedItem.taxaOcupacaoPerc < 40 ? (
-                  <span className="text-amber-300 font-semibold">
-                    ⚠️ Atenção: Carga com menos de 40% de ocupação. Se não for exigência bancária de DU exclusivo, a Grupagem LCL pode sair mais económica!
+                    <span className="text-amber-300 font-semibold">
+                    Ocupação abaixo de 40%; compare com uma cotação LCL.
                   </span>
                 ) : (
                   <span className="text-emerald-300 font-semibold">
-                    Excelente aproveitamento de espaço! O frete FCL maximiza a rentabilidade.
+                    Percentagem calculada com o volume informado.
                   </span>
                 )}
               </p>
             </div>
 
             {/* Comparativo Grupagem LCL */}
-            <div className="bg-white/10 backdrop-blur-md rounded-2xl p-5 border border-white/15">
-              <p className="text-[10px] font-bold text-slate-300 uppercase tracking-widest mb-1">
-                Simulação se fosse Grupagem LCL (~$380/m³)
+            <div className="border border-white/15 rounded-lg p-4">
+              <p className="text-[10px] font-semibold text-slate-300 mb-1">
+                Estimativa LCL · 380 USD/m³
               </p>
               <p className="text-2xl font-bold font-heading text-slate-200">
                 ${formatoMoeda(calculatedItem.estimativaGrupagemLclUsd)} USD
               </p>
-              <div className="mt-3 pt-3 border-t border-white/10 text-xs">
-                {calculatedItem.volumeUtilizadoCbm <= 10 ? (
-                  <div className="text-amber-300">
-                    <span className="font-bold">Para cargas pequenas (ex: 3 m³):</span> A Grupagem PrimeWay poupa despesas fixas de porto, Kudumba e linha de navegação. No entanto, o contentor inteiro confere DU próprio em nome do cliente para fecho de câmbio bancário!
-                  </div>
-                ) : (
-                  <div className="text-emerald-300">
-                    <span className="font-bold">Economia de Escala:</span> Para este volume ({calculatedItem.volumeUtilizadoCbm} m³), o Contentor Inteiro compensa imenso comparado com mandar em grupagem fracionada!
-                  </div>
-                )}
+              <div className="mt-3 pt-3 border-t border-white/10 text-xs text-slate-300">
+                Referência para {calculatedItem.volumeUtilizadoCbm} m³; não é cotação.
               </div>
             </div>
           </div>
 
           {/* Divisão Visual das 4 Partes */}
-          <div className="bg-black/30 rounded-2xl p-5 border border-white/10">
-            <h4 className="text-xs font-bold text-white uppercase tracking-widest mb-4">
-              Composição Oficial dos Custos no Destino (Moçambique):
+          <div className="border-t border-white/15 pt-5">
+            <h4 className="text-xs font-semibold text-white mb-4">
+              Composição estimada dos custos
             </h4>
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 text-xs">
-              <div className="bg-white/5 p-3 rounded-xl border border-amber-500/30">
-                <span className="text-[10px] font-bold text-amber-400 uppercase block">1. Estado & Alfândegas</span>
+              <div className="border-l-2 border-amber-500/60 pl-3">
+                <span className="text-[10px] font-semibold text-amber-400 block">1. Estado e alfândegas</span>
                 <span className="text-base font-bold text-white block mt-1">
                   {formatoMoeda(calculatedItem.subtotalAlfandegaMzn)} MZN
                 </span>
                 <span className="text-[10px] text-slate-400">
-                  Direitos ({currentContentor.direitosPerc}%) + IVA (16%) + TSA + JUE + Kudumba
+                  Direitos ({exibirAliquota(currentContentor.direitosPerc)}) + ICE ({exibirAliquota(currentContentor.icePerc)}) + IVA ({exibirAliquota(currentContentor.ivaPerc)}) + TSA + JUE + Kudumba
                 </span>
               </div>
 
-              <div className="bg-white/5 p-3 rounded-xl border border-blue-500/30">
-                <span className="text-[10px] font-bold text-blue-400 uppercase block">2. Porto & Terminais</span>
+              <div className="border-l-2 border-blue-500/60 pl-3">
+                <span className="text-[10px] font-semibold text-blue-400 block">2. Porto e terminais</span>
                 <span className="text-base font-bold text-white block mt-1">
                   {formatoMoeda(calculatedItem.subtotalPortoTerminalMzn)} MZN
                 </span>
                 <span className="text-[10px] text-slate-400">
-                  THC Descarga + Segurança ISPS + Armazenagem
+                  THC + ISPS + armazenagem
                 </span>
               </div>
 
-              <div className="bg-white/5 p-3 rounded-xl border border-indigo-500/30">
-                <span className="text-[10px] font-bold text-indigo-400 uppercase block">3. Linha de Navegação</span>
+              <div className="border-l-2 border-indigo-500/60 pl-3">
+                <span className="text-[10px] font-semibold text-indigo-400 block">3. Linha de navegação</span>
                 <span className="text-base font-bold text-white block mt-1">
                   {formatoMoeda(calculatedItem.subtotalLinhaNavegacaoMzn)} MZN
                 </span>
                 <span className="text-[10px] text-slate-400">
-                  Delivery Order (D.O.) + Lavagem/Desmagnetização + Caução
+                  Delivery Order + limpeza + caução
                 </span>
               </div>
 
-              <div className="bg-white/5 p-3 rounded-xl border border-emerald-500/30">
-                <span className="text-[10px] font-bold text-emerald-400 uppercase block">4. Despachante & Inland</span>
+              <div className="border-l-2 border-emerald-500/60 pl-3">
+                <span className="text-[10px] font-semibold text-emerald-400 block">4. Despacho e entrega</span>
                 <span className="text-base font-bold text-white block mt-1">
                   {formatoMoeda(calculatedItem.subtotalLogisticaPrimewayMzn)} MZN
                 </span>
                 <span className="text-[10px] text-slate-400">
-                  Despachante Oficial + Camião Porta-Contentores + PrimeWay
+                  Despachante + camião + PrimeWay
                 </span>
               </div>
             </div>
           </div>
-        </section>
+          </div>
+        </details>
       )}
     </div>
   );

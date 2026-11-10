@@ -108,6 +108,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('todas');
   const [selectedStatus, setSelectedStatus] = useState('todos');
+  const [failedImages, setFailedImages] = useState<Record<string, string>>({});
 
   // Modal State: Full Product
   const [isProductModalOpen, setIsProductModalOpen] = useState(false);
@@ -625,11 +626,8 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
         <div>
           <h2 className="font-heading font-extrabold text-2xl text-slate-900 tracking-tight flex items-center gap-2">
             <Package className="text-emerald-600" size={26} />
-            Catálogo de Produtos & Códigos HS
+            Produtos
           </h2>
-          <p className="text-xs text-slate-500">
-            Base de produtos para importação da China, com dimensões CBM, peso, código pautal e múltiplos fornecedores.
-          </p>
         </div>
 
         <button
@@ -650,7 +648,8 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
               type="text"
               value={searchTerm}
               onChange={e => setSearchTerm(e.target.value)}
-              placeholder="Pesquisar por PROD-0001, nome (PT/EN/CN), material, HS Code ou tags..."
+              placeholder="Pesquisar produto ou código HS"
+              aria-label="Pesquisar produtos"
               className="w-full pl-10 pr-3.5 py-2 rounded-xl border border-slate-200 text-xs focus:outline-none focus:border-corp-blue transition-colors"
             />
           </div>
@@ -660,6 +659,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
             <select
               value={selectedCategory}
               onChange={e => setSelectedCategory(e.target.value)}
+              aria-label="Categoria"
               className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white text-slate-700 focus:outline-none focus:border-corp-blue"
             >
               <option value="todas">Todas as Categorias</option>
@@ -674,6 +674,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
             <select
               value={selectedStatus}
               onChange={e => setSelectedStatus(e.target.value)}
+              aria-label="Estado do produto"
               className="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs bg-white text-slate-700 focus:outline-none focus:border-corp-blue"
             >
               <option value="todos">Status (Todos)</option>
@@ -720,50 +721,36 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
             const effectiveMoq = product.moq ?? bestRelation?.moq ?? 1;
             const linkedSupplier = suppliers.find(s => s.id === (product.defaultSupplierId || bestRelation?.supplierId));
 
-            const hasValidImage = product.images && product.images.length > 0 && product.images[0] && product.images[0].trim() !== '' && product.images[0] !== '/IMG-20260215-WA0003.jpg';
+            const hasValidImage = product.images && product.images.length > 0 && product.images[0] && product.images[0].trim() !== '' && product.images[0] !== '/IMG-20260215-WA0003.jpg' && failedImages[product.id] !== product.images[0];
 
-            return (
+              return (
               <div 
                 key={product.id}
+                data-sourcing-product-card={product.id}
                 className="bg-white rounded-2xl border border-slate-200/80 shadow-sm hover:shadow-md transition-all flex flex-col justify-between overflow-hidden group"
               >
                 <div>
                   {/* Top Image & Badge - No Logo Fallback */}
-                  <div className="relative h-44 bg-slate-100 overflow-hidden border-b border-slate-100 flex items-center justify-center">
+                  <div className={`relative ${hasValidImage ? 'h-44' : 'h-14'} bg-slate-100 overflow-hidden border-b border-slate-100 flex items-center justify-center`}>
                     {hasValidImage ? (
                       <img 
                         src={product.images[0]} 
                         alt={product.namePt}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                        onError={(e) => {
-                          e.currentTarget.style.display = 'none';
-                        }}
+                        onError={() => setFailedImages(previous => ({ ...previous, [product.id]: product.images[0] }))}
                       />
                     ) : (
-                      <div className="w-full h-full flex flex-col items-center justify-center bg-slate-50 text-slate-400 p-4">
-                        <Package size={38} className="text-slate-300 mb-1" />
-                        <span className="text-[11px] font-semibold text-slate-500">Sem fotografia</span>
-                        <span className="text-[10px] text-slate-400">{product.category}</span>
+                      <div className="flex items-center justify-center gap-2 text-slate-400">
+                        <Package size={16} aria-hidden="true" />
+                        <span className="text-[11px] text-slate-500">Sem fotografia</span>
                       </div>
                     )}
 
-                    <div className="absolute top-3 left-3 flex items-center gap-1.5 z-10">
-                      <span className="font-mono text-[10px] font-extrabold px-2 py-0.5 bg-slate-900/80 text-white backdrop-blur-sm rounded-md">
-                        {product.id}
-                      </span>
-                      <span className="text-[10px] font-bold uppercase px-2 py-0.5 bg-emerald-600/90 text-white backdrop-blur-sm rounded-md">
-                        {product.category}
-                      </span>
-                    </div>
+                    <span className="absolute top-3 left-3 text-[10px] font-bold uppercase px-2 py-0.5 bg-slate-900/80 text-white backdrop-blur-sm rounded-md">
+                      {product.status === 'ativo' ? 'Ativo' : product.status}
+                    </span>
 
                     <div className="absolute top-3 right-3 flex items-center gap-1 z-10">
-                      <button
-                        onClick={() => handleOpenQuickPriceModal(product)}
-                        className="h-7 px-2 rounded-lg bg-white/95 text-emerald-700 hover:bg-emerald-50 flex items-center gap-1 backdrop-blur-sm shadow text-[11px] font-bold transition-colors cursor-pointer"
-                        title="Editar Preço e Quantidade Mínima"
-                      >
-                        <DollarSign size={12} /> Preço/MOQ
-                      </button>
                       <button
                         onClick={() => handleOpenEditProduct(product)}
                         className="w-7 h-7 rounded-lg bg-white/95 text-slate-700 hover:text-corp-blue flex items-center justify-center backdrop-blur-sm shadow transition-colors cursor-pointer"
@@ -791,37 +778,9 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                       <h3 className="font-bold text-sm text-slate-900 line-clamp-2 leading-snug" title={product.namePt}>
                         {product.namePt}
                       </h3>
-                      {product.nameCn && (
-                        <p className="text-[11px] text-slate-500 font-serif italic truncate mt-0.5">
-                          {product.nameCn}
-                        </p>
-                      )}
-                      {product.nameEn && (
-                        <p className="text-[10px] text-slate-400 truncate">
-                          EN: {product.nameEn}
-                        </p>
-                      )}
                     </div>
 
-                    {/* Especificações Físicas & Código HS */}
-                    <div className="grid grid-cols-3 gap-2 bg-slate-50 p-2.5 rounded-xl text-[10px] text-slate-600 border border-slate-100">
-                      <div>
-                        <span className="block text-slate-400 font-medium">HS Code</span>
-                        <strong className="text-slate-800 font-mono">{product.hsCode || 'N/D'}</strong>
-                      </div>
-                      <div>
-                        <span className="block text-slate-400 font-medium">Volume CBM</span>
-                        <strong className="text-slate-800 font-mono">
-                          {product.dimensions.cbmUnit ? `${product.dimensions.cbmUnit} m³` : 'N/D'}
-                        </strong>
-                      </div>
-                      <div>
-                        <span className="block text-slate-400 font-medium">Peso Unit.</span>
-                        <strong className="text-slate-800 font-mono">{product.weightKg ? `${product.weightKg} kg` : 'N/D'}</strong>
-                      </div>
-                    </div>
-
-                    {/* Preço Indicativo & MOQ - Caixa com Edição Rápida */}
+                    {/* Preço, MOQ e fornecedor essenciais */}
                     <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3 text-xs space-y-2">
                       <div className="flex items-start justify-between gap-2">
                         <div>
@@ -831,7 +790,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                           {effectivePrice > 0 ? (
                             <div className="flex items-baseline gap-1 mt-0.5">
                               <span className="text-base font-black text-emerald-700 font-mono">
-                                {effectiveCurrency} ${effectivePrice.toFixed(2)}
+                                {effectiveCurrency} {effectivePrice.toFixed(2)}
                               </span>
                               <span className="text-[11px] text-slate-500">
                                 /{effectiveUnit}
@@ -849,19 +808,17 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                             Mínimo (MOQ):
                           </span>
                           <span className="text-xs font-bold text-slate-800 font-mono block mt-0.5">
-                            {effectiveMoq} {effectiveUnit}(s)
+                            {effectiveMoq} {effectiveUnit}
                           </span>
                         </div>
                       </div>
 
-                      {linkedSupplier && (
-                        <div className="text-[10px] text-slate-500 truncate border-t border-slate-200/60 pt-1.5 flex items-center gap-1">
-                          <Building2 size={11} className="text-corp-blue shrink-0" />
-                          <span className="truncate">Fornecedor: <strong>{linkedSupplier.companyName}</strong></span>
-                        </div>
-                      )}
+                      <div className="text-[10px] text-slate-500 truncate border-t border-slate-200/60 pt-1.5 flex items-center gap-1">
+                        <Building2 size={11} className="text-corp-blue shrink-0" />
+                        <span className="truncate">Fornecedor: <strong>{linkedSupplier?.companyName || 'Por definir'}</strong></span>
+                      </div>
 
-                      <div className="pt-1 flex items-center justify-between border-t border-slate-200/60">
+                      <div className="pt-1 flex items-center justify-between border-t border-slate-200/60 gap-2">
                         <button
                           type="button"
                           onClick={() => handleOpenQuickPriceModal(product)}
@@ -869,7 +826,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                           title="Clique para editar o preço e a quantidade mínima deste produto"
                         >
                           <DollarSign size={12} className="text-emerald-600" />
-                          <span>Editar Preço & MOQ</span>
+                          <span>Editar preço/MOQ</span>
                         </button>
 
                         <button
@@ -883,6 +840,20 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                         </button>
                       </div>
                     </div>
+
+                    <details className="text-xs text-slate-500">
+                      <summary className="cursor-pointer font-semibold text-slate-700">Detalhes do produto</summary>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-1.5 pt-2 leading-relaxed">
+                        <span>ID interno: <strong className="font-mono text-slate-700">{product.id}</strong></span>
+                        <span>Categoria: {product.category}</span>
+                        <span>HS: <strong className="font-mono text-slate-700">{product.hsCode || 'N/D'}</strong></span>
+                        <span>Peso: {product.weightKg ? `${product.weightKg} kg` : 'N/D'}</span>
+                        <span>CBM: {product.dimensions.cbmUnit ? `${product.dimensions.cbmUnit} m³` : 'N/D'}</span>
+                        {product.nameEn && <span>Nome EN: {product.nameEn}</span>}
+                        {product.nameCn && <span>Nome CN: {product.nameCn}</span>}
+                        {product.material && <span>Material: {product.material}</span>}
+                      </div>
+                    </details>
                   </div>
                 </div>
 
@@ -894,7 +865,7 @@ export const ProductsView: React.FC<ProductsViewProps> = ({
                     title="Preenche a calculadora aduaneira com dimensões, peso e preço"
                   >
                     <Send size={13} />
-                    Enviar para Calculadora
+                    Simular
                   </button>
                 </div>
               </div>

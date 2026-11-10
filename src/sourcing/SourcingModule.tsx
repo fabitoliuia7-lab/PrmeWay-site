@@ -41,6 +41,7 @@ import { CatalogsDocumentsView } from './components/CatalogsDocumentsView';
 import { ClientsView } from './components/ClientsView';
 import { SettingsView } from './components/SettingsView';
 import { CommercialProposalModal } from './components/CommercialProposalModal';
+import './sourcing-ui.css';
 
 export interface SourcingModuleProps {
   onBackToCalculator: () => void;
@@ -335,19 +336,19 @@ export const SourcingModule: React.FC<SourcingModuleProps> = ({
 
   // Nav Items
   const navItems = [
-    { id: 'dashboard', label: 'Painel Geral', icon: LayoutDashboard },
-    { id: 'fornecedores', label: 'Fornecedores Chineses', icon: Building2, count: data.suppliers.length },
-    { id: 'produtos', label: 'Catálogo de Produtos', icon: Package, count: data.products.length },
-    { id: 'pedidos', label: 'Pedidos de Sourcing', icon: ClipboardList, count: data.orders.length },
-    { id: 'cotacoes', label: 'Cotações Recebidas', icon: FileText, count: data.quotes.length },
-    { id: 'comparacao', label: 'Comparar Cotações', icon: Scale },
-    { id: 'documentos', label: 'Catálogos & Anexos', icon: FolderDown, count: data.documents.length },
-    { id: 'clientes', label: 'Clientes em MZ', icon: Users, count: data.clients.length },
-    { id: 'configuracoes', label: 'Configurações', icon: SettingsIcon }
+    { id: 'dashboard', label: 'Painel', icon: LayoutDashboard },
+    { id: 'fornecedores', label: 'Fornecedores', icon: Building2, count: data.suppliers.length },
+    { id: 'produtos', label: 'Produtos', icon: Package, count: data.products.length },
+    { id: 'pedidos', label: 'Pedidos', icon: ClipboardList, count: data.orders.length },
+    { id: 'cotacoes', label: 'Cotações', icon: FileText, count: data.quotes.length },
+    { id: 'comparacao', label: 'Comparar', icon: Scale },
+    { id: 'documentos', label: 'Documentos', icon: FolderDown, count: data.documents.length },
+    { id: 'clientes', label: 'Clientes', icon: Users, count: data.clients.length },
+    { id: 'configuracoes', label: 'Definições', icon: SettingsIcon }
   ];
 
   return (
-    <div className="min-h-screen bg-slate-50/50 pb-20">
+    <div className="pw-sourcing min-h-screen bg-slate-50/50 pb-20">
       {/* Sourcing Top Navigation Bar */}
       <div className="bg-[#1A284F] text-white border-b border-slate-700/60 sticky top-0 z-30 shadow-md">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -371,27 +372,10 @@ export const SourcingModule: React.FC<SourcingModuleProps> = ({
                 </div>
                 <div>
                   <div className="font-heading font-extrabold text-sm sm:text-base leading-none tracking-tight flex items-center gap-1.5">
-                    Módulo de Sourcing
-                    <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.2 rounded font-bold border border-emerald-500/30">
-                      China ➔ MZ
-                    </span>
+                    Sourcing
                   </div>
-                  <span className="text-[10px] text-slate-300 font-medium">
-                    Base de Fabricantes, Catálogos e Comparador de Cotações
-                  </span>
                 </div>
               </div>
-            </div>
-
-            {/* Right: Quick Switch to Calculator */}
-            <div className="flex items-center gap-2">
-              <button
-                onClick={onBackToCalculator}
-                className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-corp-orange hover:bg-corp-orange-dark text-white text-xs font-bold uppercase tracking-wider transition-all shadow-md shadow-corp-orange/30 cursor-pointer"
-              >
-                <Calculator size={15} />
-                <span className="hidden sm:inline">Calculadora de Custos</span>
-              </button>
             </div>
           </div>
 
@@ -403,6 +387,7 @@ export const SourcingModule: React.FC<SourcingModuleProps> = ({
               return (
                 <button
                   key={item.id}
+                  aria-current={isActive ? 'page' : undefined}
                   onClick={() => {
                     setActiveTab(item.id);
                     if (item.id !== 'comparacao') setCompareOrderId(undefined);
@@ -430,7 +415,7 @@ export const SourcingModule: React.FC<SourcingModuleProps> = ({
       </div>
 
       {/* Main Sourcing Content Area */}
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
+      <main id="conteudo-principal" tabIndex={-1} className="pw-sourcing__main max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
         {activeTab === 'dashboard' && (
           <DashboardView
             suppliers={data.suppliers}
@@ -438,10 +423,11 @@ export const SourcingModule: React.FC<SourcingModuleProps> = ({
             orders={data.orders}
             quotes={data.quotes}
             clients={data.clients}
-            onNavigateTab={tab => {
+            onNavigateTab={(tab, orderId) => {
               if (tab === 'calculadora') {
                 onBackToCalculator();
               } else {
+                if (tab === 'comparacao') setCompareOrderId(orderId);
                 setActiveTab(tab);
               }
             }}

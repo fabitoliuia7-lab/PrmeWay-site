@@ -81,6 +81,8 @@ export interface ContentorItem {
   tipoContentor: ContentorType;
   descricaoCarga: string;
   codigoPautal: string; // HS Code
+  pautaEstado?: 'pendente' | 'confirmada' | 'incompleta' | 'manual' | 'nao_encontrada';
+  iceRegraPauta?: string;
   pesoTotalKg: number | string;
   volumeUtilizadoCbm: number | string;
   quantidade: number | string;
@@ -190,6 +192,7 @@ export interface ContentorCalculatedItem {
   direitosMzn: number;
   iceMzn: number;
   ivaMzn: number;
+  taxasPendentes: boolean;
   tsaMzn: number;
   mcnetMzn: number;
   kudumbaMzn: number;

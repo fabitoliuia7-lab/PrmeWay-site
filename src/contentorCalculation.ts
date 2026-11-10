@@ -11,6 +11,9 @@ export function calculateContentores(
   const cambio = Number(taxaCambioInput) || 64;
 
   const itemsCalculated: ContentorCalculatedItem[] = contentoresList.map((c) => {
+    const validRate = (value: number | string) => value !== '' && value !== undefined && value !== null && String(value).trim() !== '' && Number.isFinite(Number(value)) && Number(value) >= 0 && Number(value) <= 100;
+    const rateOrZero = (value: number | string) => validRate(value) ? Number(value) : 0;
+    const taxasPendentes = ![c.direitosPerc, c.icePerc, c.ivaPerc].every(validRate) || ['pendente', 'incompleta', 'nao_encontrada'].includes(c.pautaEstado || '');
     const spec = CONTENTOR_SPECS[c.tipoContentor] || CONTENTOR_SPECS['20_dry'];
     const qty = Math.max(1, Number(c.quantidade) || 1);
 
@@ -22,13 +25,13 @@ export function calculateContentores(
     const cifMznTotal = cifUsdTotal * cambio;
 
     // 1. Alfândegas / Estado (DU Oficial)
-    const direitosPerc = Number(c.direitosPerc) || 0;
+    const direitosPerc = rateOrZero(c.direitosPerc);
     const direitosMzn = cifMznTotal * (direitosPerc / 100);
 
-    const icePerc = Number(c.icePerc) || 0;
+    const icePerc = rateOrZero(c.icePerc);
     const iceMzn = (cifMznTotal + direitosMzn) * (icePerc / 100);
 
-    const ivaPerc = Number(c.ivaPerc) || 16;
+    const ivaPerc = rateOrZero(c.ivaPerc);
     const ivaMzn = (cifMznTotal + direitosMzn + iceMzn) * (ivaPerc / 100);
 
     const tsaMzn = (Number(c.tsaAduaneiroMzn) || 0) * qty;
@@ -101,6 +104,7 @@ export function calculateContentores(
       direitosMzn,
       iceMzn,
       ivaMzn,
+      taxasPendentes,
       tsaMzn,
       mcnetMzn,
       kudumbaMzn,
@@ -212,6 +216,7 @@ export function calculateContentores(
   return {
     cambio,
     itemsCalculated,
+    taxasPendentes: itemsCalculated.some(item => item.taxasPendentes),
     totalFobUsd,
     totalFreteUsd,
     totalSeguroUsd,

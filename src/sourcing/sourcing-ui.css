@@ -1,0 +1,34 @@
+.pw-sourcing details > summary {
+  cursor: pointer;
+  list-style-position: inside;
+}
+
+.pw-sourcing details > summary:focus-visible,
+.pw-sourcing button:focus-visible,
+.pw-sourcing a:focus-visible,
+.pw-sourcing select:focus-visible,
+.pw-sourcing input:focus-visible {
+  outline: 3px solid rgba(213, 106, 52, 0.55);
+  outline-offset: 2px;
+}
+
+.pw-sourcing details[open] > summary {
+  color: #16263c;
+}
+
+.pw-sourcing__main h1,
+.pw-sourcing__main h2,
+.pw-sourcing__main h3 {
+  text-transform: none;
+  letter-spacing: -0.015em;
+  font-weight: 600;
+}
+.pw-sourcing button { text-transform: none; letter-spacing: 0; }
+.pw-sourcing__main [data-sourcing-product-card] { box-shadow: none; border-radius: 7px; }
+.pw-sourcing__main [data-sourcing-product-card] img { transform: none; }
+.pw-sourcing__main .btn-modern-primary { box-shadow: none; border-radius: 5px; }
+
+@media (max-width: 640px) {
+  .pw-sourcing details > summary { padding-block: 0.2rem; }
+  .pw-sourcing__main { padding-inline: 1rem; }
+}
