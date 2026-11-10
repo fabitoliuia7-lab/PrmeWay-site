@@ -7,13 +7,15 @@
   "scripts": {
     "dev": "tsx server.ts",
     "start": "tsx server.ts",
-    "build": "vite build",
+    "build": "node scripts/build-pauta-index.mjs && vite build",
     "preview": "vite preview",
     "clean": "rm -rf dist",
     "lint": "tsc --noEmit",
     "test:security": "tsx --test tests/api.security.test.ts",
     "test:rules": "tsx --test tests/firestore.security.test.ts",
-    "test:design": "tsx --test tests/corporate.design.test.ts"
+    "test:design": "tsx --test tests/corporate.design.test.ts",
+    "test:sourcing": "tsx --test tests/sourcing.ui.test.ts",
+    "test:hs": "tsx --test tests/hs.lookup.test.ts tests/contentor.calculation.test.ts tests/contentor.ui.test.ts"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",

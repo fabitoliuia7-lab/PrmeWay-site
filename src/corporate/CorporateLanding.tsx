@@ -23,8 +23,8 @@ export function CorporateLanding({ onNavigate }: CorporateLandingProps) {
         <div className="pw-landing__hero-copy">
           <p className="pw-landing__brand">PrimeWay <span>Invest &amp; Logística</span></p>
           <p className="pw-eyebrow">China <span aria-hidden="true">↔</span> Moçambique</p>
-          <h1 id="hero-title" className="pw-title">Importação e logística entre a China e Moçambique.</h1>
-          <p className="pw-landing__intro">Organizamos compras, transporte e entrega para pessoas e empresas que precisam de importar com mais clareza em cada etapa.</p>
+          <h1 id="hero-title" className="pw-title">Excelência em cada importação.</h1>
+          <p className="pw-landing__intro">Organizamos compras, transporte e entrega entre a China e Moçambique para pessoas e empresas que precisam de importar com mais clareza em cada etapa.</p>
           <div className="pw-landing__actions">
             <a className="pw-primary" href={QUOTATION_URL} target="_blank" rel="noreferrer">Pedir cotação <span aria-hidden="true">↗</span></a>
             <button className="pw-secondary" type="button" onClick={() => onNavigate('simulador')}>Simular custos <span aria-hidden="true">→</span></button>

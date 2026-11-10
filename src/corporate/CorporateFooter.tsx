@@ -18,7 +18,7 @@ export function CorporateFooter({ onNavigate, onLegal, onSupplierCheck, onInstal
       <div className="pw-container pw-footer-main">
         <div className="pw-footer-intro">
           <p className="pw-eyebrow">PrimeWay</p>
-          <h2 className="pw-title">Importação e logística entre a China e Moçambique.</h2>
+          <h2 className="pw-title">Excelência em cada importação.</h2>
           <a className="pw-link pw-footer-contact-link" href={`mailto:${COMPANY.email}`}>
             Falar com a equipa <span aria-hidden="true">↗</span>
           </a>

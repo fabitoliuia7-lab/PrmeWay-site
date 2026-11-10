@@ -58,10 +58,11 @@ test('PWA shortcuts and cached legacy shortcuts open the intended tools', () => 
 test('commercial page has clear copy and keeps lengthy tools out of the landing', () => {
   const html = renderToStaticMarkup(createElement(Landing, { onNavigate: noop }));
   assert.match(html, /<main id="conteudo-principal" tabindex="-1"/);
-  assert.match(html, /Importação e logística entre a China e Moçambique/);
+  assert.match(html, /<h1 id="hero-title"[^>]*>Excelência em cada importação\.<\/h1>/);
+  assert.match(html, /China.*Moçambique/);
   assert.match(html, /Pedir cotação/);
   assert.match(html, /Simular custos/);
-  assert.doesNotMatch(html, /<input|<video|24\/7|100%|Excelência em cada importação/);
+  assert.doesNotMatch(html, /<input|<video|24\/7|100%/);
   for (const id of ['inicio', 'serviços', 'como-funciona', 'a-empresa', 'contactos']) assert.ok(html.includes(`id="${id}"`));
 });
 
@@ -96,6 +97,7 @@ test('account header preserves profile, history and logout without implying admi
 test('footer preserves actual company data, legal actions and contact destinations', () => {
   const html = renderToStaticMarkup(createElement(Footer, footerProps));
   for (const value of [COMPANY.nuit, COMPANY.phoneHref, COMPANY.secondPhoneHref, `mailto:${COMPANY.email}`]) assert.ok(html.includes(value));
+  assert.match(html, /Excelência em cada importação\./);
   for (const label of ['Termos', 'Privacidade', 'Compliance', 'Pauta Aduaneira', 'Verificar fornecedor', 'Instalar aplicação']) assert.ok(html.includes(label));
   assert.ok(html.includes(`© ${new Date().getFullYear()}`));
   assert.doesNotMatch(html, /href="#top"/);

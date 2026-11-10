@@ -57,6 +57,7 @@ import {
 } from './contentorTypes';
 import { calculateContentores } from './contentorCalculation';
 import { ContentorFclSection } from './ContentorFclSection';
+import './components/simulator-ui.css';
 import { ContentorProformaPrint } from './ContentorProformaPrint';
 import { motion, AnimatePresence } from 'motion/react';
 import { PieChart, Pie, Cell, Tooltip as RechartsTooltip, ResponsiveContainer, Legend } from 'recharts';
@@ -682,6 +683,10 @@ function AppContent() {
     setContentoresList(prev => prev.map(c => c.id === id ? { ...c, [field]: value } : c));
   };
 
+  const atualizarContentorFields = (id: string, fields: Partial<ContentorItem>) => {
+    setContentoresList(prev => prev.map(c => c.id === id ? { ...c, ...fields } : c));
+  };
+
   const limparCalculadoraContentores = () => {
     const novo = createCleanContentorItem('20_dry');
     setContentoresList([novo]);
@@ -952,6 +957,7 @@ function AppContent() {
     });
 
     setMoeda('USD');
+    setCalcMode('geral');
     if (data.freightEstimateUSD && data.freightEstimateUSD > 0) {
       setFreteInternacional(data.freightEstimateUSD);
     }
@@ -1433,6 +1439,8 @@ function AppContent() {
     return contentorResults.itemsCalculated.find(c => c.item.id === currentContentor.id) || contentorResults.itemsCalculated[0];
   }, [contentorResults, currentContentor.id]);
 
+  const aliquotasContentorPendentes = calcMode === 'contentor' && contentorResults.taxasPendentes;
+
   const results = useMemo((): CalculationResult => {
     if (calcMode === 'contentor') {
       const isMzn = moeda === 'MZN';
@@ -1894,6 +1902,10 @@ function AppContent() {
   };
 
   const preencherDebitNoteComCotacao = () => {
+    if (aliquotasContentorPendentes) {
+      alert('Confirme as alíquotas em falta nos contentores antes de emitir o documento.');
+      return;
+    }
     if (calcMode === 'contentor') {
       setDebitNoteForm({
         clientInfo: nomeCliente || 'Cliente FCL Contentor',
@@ -2095,6 +2107,10 @@ function AppContent() {
   };
 
   const imprimirFatura = async () => {
+    if (aliquotasContentorPendentes) {
+      alert('Confirme as alíquotas em falta nos detalhes dos impostos antes de exportar a proforma.');
+      return;
+    }
     const element = document.getElementById('invoice-print-area');
     if (!element) {
       alert("Erro interno: A área de impressão não foi encontrada.");
@@ -2339,173 +2355,56 @@ function AppContent() {
           )}
 
           {activeView === 'simulador' && (
-            <div id="simulador" className="pw-tool-view no-print">
+            <div id="simulador" className="pw-tool-view pw-simulator no-print">
               <div className="pw-container pw-tool-breadcrumb"><button onClick={() => navigateTo('landing')}>Início</button><ChevronRight size={13} aria-hidden="true" /><span>Simulador de importação</span></div>
       {/* Simulator Section */}
-      <main id="conteudo-principal" tabIndex={-1} className="max-w-7xl mx-auto px-6 py-12 md:py-20 space-y-8 no-print">
-        <div className="text-center max-w-3xl mx-auto space-y-2">
-          <span className="pw-eyebrow text-corp-orange">Planeamento de importação</span>
-          <h1 className="pw-title text-3xl md:text-5xl text-slate-900">Simulador de importação</h1>
-          <p className="text-slate-600 text-sm md:text-base max-w-2xl mx-auto">Organize os valores da compra, transporte e impostos. Guarde a simulação ou prepare a sua proforma em PDF.</p>
-        </div>
-
-        {/* Sourcing Bridge Banner */}
-        <div className="bg-gradient-to-r from-[#1A284F] via-[#223565] to-[#1A284F] p-4 sm:p-5 rounded-2xl text-white shadow-md flex flex-col sm:flex-row items-center justify-between gap-4 border border-blue-900/50 max-w-5xl mx-auto">
-          <div className="flex items-center gap-3.5 text-left">
-            <div className="w-11 h-11 rounded-xl bg-corp-orange text-white flex items-center justify-center font-black text-xs shadow shrink-0">
-              CN ➔ MZ
-            </div>
-            <div>
-              <div className="font-bold text-sm text-white flex items-center gap-2">
-                Módulo Interno de Sourcing de Produtos da China
-                <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded font-bold border border-emerald-500/30">
-                  Integrado
-                </span>
-              </div>
-              <p className="text-xs text-slate-300 mt-0.5">
-                Fornecedores chineses (1688, Alibaba, Cantão), catálogos PDF, cotações e envio automático para esta calculadora.
-              </p>
-            </div>
+      <main id="conteudo-principal" tabIndex={-1} className="max-w-7xl mx-auto px-6 py-8 md:py-12 space-y-6 no-print">
+        <header className="pw-simulator-heading">
+          <div>
+            <h1 className="pw-title text-3xl md:text-4xl text-slate-900">Simulador de importação</h1>
+            <p className="text-slate-500 text-sm mt-2">Compra, transporte e impostos.</p>
           </div>
-          <button
-            type="button"
-            onClick={() => navigateTo('sourcing')}
-            className="btn-modern-primary !py-2.5 px-4 text-xs font-bold uppercase tracking-wider flex items-center gap-1.5 whitespace-nowrap cursor-pointer shadow self-stretch sm:self-auto justify-center"
-          >
-            Abrir Sourcing <ChevronRight size={14} />
+          <button type="button" onClick={() => navigateTo('sourcing')} className="pw-secondary" aria-label="Abrir sourcing">
+            Sourcing <ChevronRight size={14} aria-hidden="true" />
           </button>
-        </div>
+        </header>
 
-        {/* Mode Selector Tabs */}
-        <div className="bg-slate-100 p-1.5 rounded-2xl flex flex-col sm:flex-row gap-2 border border-slate-200/80 shadow-inner max-w-4xl mx-auto">
-          <button
-            type="button"
-            onClick={() => setCalcMode('geral')}
-            className={`flex-1 py-3 px-3.5 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer ${
-              calcMode === 'geral' 
-                ? 'bg-corp-blue text-white shadow-md' 
-                : 'text-slate-600 hover:bg-slate-200/60'
-            }`}
-          >
-            <Package size={16} /> Cargas Gerais (LCL / CBM)
+        <div className="pw-simulator-modes" role="group" aria-label="Modalidade de importação">
+          <button type="button" onClick={() => setCalcMode('geral')} aria-pressed={calcMode === 'geral'} className={calcMode === 'geral' ? 'is-active' : ''}>
+            <Package size={16} aria-hidden="true" /> Carga geral (LCL)
           </button>
-          <button
-            type="button"
-            onClick={() => setCalcMode('contentor')}
-            className={`flex-1 py-3 px-3.5 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer ${
-              calcMode === 'contentor' 
-                ? 'bg-corp-blue text-white shadow-md' 
-                : 'text-slate-600 hover:bg-slate-200/60'
-            }`}
-          >
-            <Boxes size={16} /> Contentor Inteiro (FCL 20'/40')
+          <button type="button" onClick={() => setCalcMode('contentor')} aria-pressed={calcMode === 'contentor'} className={calcMode === 'contentor' ? 'is-active' : ''}>
+            <Boxes size={16} aria-hidden="true" /> Contentor (FCL)
           </button>
-          <button
-            type="button"
-            onClick={() => setCalcMode('veiculos')}
-            className={`flex-1 py-3 px-3.5 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer ${
-              calcMode === 'veiculos' 
-                ? 'bg-corp-blue text-white shadow-md' 
-                : 'text-slate-600 hover:bg-slate-200/60'
-            }`}
-          >
-            <Truck size={16} /> Veículos & Camiões (CIF)
+          <button type="button" onClick={() => setCalcMode('veiculos')} aria-pressed={calcMode === 'veiculos'} className={calcMode === 'veiculos' ? 'is-active' : ''}>
+            <Truck size={16} aria-hidden="true" /> Veículos (CIF)
           </button>
         </div>
 
         {calcMode === 'contentor' && (
-          <div className="bg-gradient-to-r from-slate-950 via-[#1A284F] to-blue-900 text-white p-5 rounded-2xl shadow-lg border border-blue-500/30 flex flex-col sm:flex-row items-center justify-between gap-4 max-w-5xl mx-auto">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-2xl bg-amber-400/20 border border-amber-400/40 flex items-center justify-center text-amber-400 shrink-0 shadow-sm">
-                <Boxes size={24} />
-              </div>
-              <div>
-                <h4 className="font-bold text-sm uppercase tracking-wide flex items-center gap-2">
-                  Simulador de Contentor Inteiro FCL (20' / 40' / 40HC)
-                </h4>
-                <p className="text-xs text-slate-300">
-                  Cálculo oficial completo: Frete FCL + Pauta Aduaneira (Direitos, ICE, IVA, TSA, MCNET, Kudumba) + Porto & Terminais + Linha de Navegação + Inland Porta-Contentores.
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={adicionarContentor}
-                className="bg-corp-orange hover:bg-corp-orange/90 text-white font-bold text-xs px-4 py-2.5 rounded-xl uppercase tracking-wider transition-all shadow-md flex items-center gap-2 cursor-pointer"
-              >
-                <Plus size={14} /> Adicionar Contentor
-              </button>
-              <button
-                type="button"
-                onClick={limparCalculadoraContentores}
-                className="bg-white/10 hover:bg-white/20 text-white font-bold text-xs px-3 py-2.5 rounded-xl uppercase tracking-wider transition-all flex items-center gap-1.5 cursor-pointer"
-                title="Limpar calculadora e resetar valores"
-              >
-                <RotateCcw size={14} /> Resetar FCL
-              </button>
-            </div>
+          <div className="flex justify-end">
+            <button type="button" onClick={limparCalculadoraContentores} className="pw-simulator-text-action">
+              <RotateCcw size={14} aria-hidden="true" /> Limpar contentores
+            </button>
           </div>
         )}
 
         {calcMode === 'geral' && (
-          <div className="bg-slate-50 p-2 rounded-2xl flex flex-col sm:flex-row gap-2 border border-slate-200/80 shadow-inner max-w-2xl mx-auto mt-4">
-            <button
-              type="button"
-              onClick={() => setImportType('grupagem')}
-              className={`flex-1 py-2.5 px-4 rounded-xl font-bold text-[11px] uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${
-                importType === 'grupagem' 
-                  ? 'bg-emerald-600 text-white shadow-md' 
-                  : 'text-slate-600 hover:bg-slate-200/60'
-              }`}
-            >
-              <Users size={14} /> Grupagem PrimeWay (Sem Burocracia)
+          <div className="pw-simulator-process" role="group" aria-label="Tipo de despacho">
+            <button type="button" onClick={() => setImportType('grupagem')} aria-pressed={importType === 'grupagem'} className={importType === 'grupagem' ? 'is-active' : ''}>
+              <Users size={14} aria-hidden="true" /> Grupagem
             </button>
-            <button
-              type="button"
-              onClick={() => setImportType('oficial')}
-              className={`flex-1 py-2.5 px-4 rounded-xl font-bold text-[11px] uppercase tracking-wider flex items-center justify-center gap-2 transition-all ${
-                importType === 'oficial' 
-                  ? 'bg-slate-800 text-white shadow-md' 
-                  : 'text-slate-600 hover:bg-slate-200/60'
-              }`}
-              title="Para pagamento via Banco com termo de compromisso e DU próprio"
-            >
-              <Landmark size={14} /> Despacho Oficial (Processo Bancário)
+            <button type="button" onClick={() => setImportType('oficial')} aria-pressed={importType === 'oficial'} className={importType === 'oficial' ? 'is-active' : ''} title="Pagamento bancário com termo de compromisso e DU próprio">
+              <Landmark size={14} aria-hidden="true" /> Despacho oficial
             </button>
           </div>
         )}
 
         {calcMode === 'veiculos' && (
-          <div className="bg-gradient-to-r from-blue-950 via-slate-900 to-corp-blue text-white p-5 rounded-2xl shadow-lg border border-blue-500/30 flex flex-col sm:flex-row items-center justify-between gap-4 max-w-5xl mx-auto">
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-2xl bg-corp-orange/20 border border-corp-orange/40 flex items-center justify-center text-corp-orange shrink-0 shadow-sm">
-                <Truck size={24} />
-              </div>
-              <div>
-                <h4 className="font-bold text-sm uppercase tracking-wide flex items-center gap-2">
-                  Calculadora Especial para Veículos & Máquinas (CIF)
-                </h4>
-                <p className="text-xs text-slate-300">Cálculo individual e multi-veículos: CIF + Impostos (Direitos, ICE, IVA, RoRo, Despachante & Inland).</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={adicionarVeiculo}
-                className="bg-corp-orange hover:bg-corp-orange/90 text-white font-bold text-xs px-4 py-2.5 rounded-xl uppercase tracking-wider transition-all shadow-md flex items-center gap-2"
-              >
-                <Plus size={14} /> Adicionar Veículo
-              </button>
-              <button
-                type="button"
-                onClick={limparCalculadoraVeiculos}
-                className="bg-white/10 hover:bg-white/20 text-white font-bold text-xs px-3 py-2.5 rounded-xl uppercase tracking-wider transition-all flex items-center gap-1.5"
-                title="Limpar calculadora e começar do zero"
-              >
-                <RotateCcw size={14} /> Limpar
-              </button>
-            </div>
+          <div className="flex justify-end">
+            <button type="button" onClick={limparCalculadoraVeiculos} className="pw-simulator-text-action">
+              <RotateCcw size={14} aria-hidden="true" /> Limpar veículos
+            </button>
           </div>
         )}
 
@@ -2517,7 +2416,7 @@ function AppContent() {
             <section className="bento-item !p-6 md:!p-8">
               <h3 className="font-heading font-semibold text-xs text-corp-blue mb-6 uppercase tracking-[0.3em] flex items-center gap-3">
                 <span className="w-6 h-6 rounded-md bg-corp-blue/5 flex items-center justify-center text-[10px]">01</span>
-                Parâmetros
+                Dados da simulação
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4 md:gap-6">
                 <div className="md:col-span-2">
@@ -2615,7 +2514,7 @@ function AppContent() {
                       onClick={adicionarVeiculo}
                       className="text-xs font-bold text-corp-orange hover:text-corp-orange/80 flex items-center gap-1.5 self-start sm:self-auto uppercase tracking-wider bg-corp-orange/10 px-3 py-1.5 rounded-lg border border-corp-orange/20"
                     >
-                      <Plus size={14} /> Adicionar Mais Um Veículo
+                      <Plus size={14} /> Adicionar veículo
                     </button>
                   </div>
 
@@ -2660,9 +2559,14 @@ function AppContent() {
                               )}
                             </div>
                           </div>
-                          <p className="text-xs font-bold truncate">
-                            {v.descricao || 'Novo Veículo sem descrição'}
-                          </p>
+                          <button
+                            type="button"
+                            onClick={(event) => { event.stopPropagation(); setActiveVeiculoId(v.id); }}
+                            aria-pressed={isActive}
+                            className="block max-w-full text-left text-xs font-bold truncate cursor-pointer"
+                          >
+                            {v.descricao || 'Novo veículo'}
+                          </button>
                           <div className="flex items-center justify-between mt-2 pt-2 border-t border-current/10 text-[10px]">
                             <span className="opacity-80">CIF Total:</span>
                             <span className="font-bold">
@@ -3196,6 +3100,7 @@ function AppContent() {
                 duplicarContentor={duplicarContentor}
                 removerContentor={removerContentor}
                 atualizarContentorField={atualizarContentorField}
+                atualizarContentorFields={atualizarContentorFields}
                 currentContentor={currentContentor}
                 calculatedItem={currentContentorCalculated}
                 taxaCambio={Number(taxaCambio) || 64}
@@ -3342,8 +3247,7 @@ function AppContent() {
                                 <span className="inline-block p-1.5 bg-white text-slate-400 group-hover:text-blue-500 rounded-lg shadow-sm mb-1 border border-slate-100">
                                   <Upload size={14} />
                                 </span>
-                                <p className="text-[10px] font-bold text-slate-500">Subir do Aparelho</p>
-                                <p className="text-[8px] text-slate-400 leading-tight">Imagem ou foto de câmara</p>
+                                <p className="text-[10px] font-medium text-slate-500">Carregar fotografia</p>
                               </div>
                             )}
                           </div>
@@ -3371,7 +3275,7 @@ function AppContent() {
                             ) : (
                               <div className="flex flex-col gap-1">
                                 <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest flex items-center gap-1">
-                                  <Globe size={11} /> Link da Internet (URL):
+                                  <Globe size={11} /> URL da fotografia
                                 </span>
                                 <input 
                                   type="url" 
@@ -3636,7 +3540,12 @@ function AppContent() {
               <div className="space-y-8">
                 <div>
                   <span className="block text-xs text-white/40 mb-2 uppercase tracking-widest font-semibold">Investimento Total</span>
-                  {results.valorDesconto > 0 ? (
+                  {aliquotasContentorPendentes ? (
+                    <div className="space-y-2">
+                      <p className="font-heading text-3xl font-medium">A confirmar</p>
+                      <p className="text-xs text-white/70 leading-relaxed">Faltam alíquotas em um ou mais contentores. Confirme-as nos detalhes dos impostos para calcular o total e exportar a proforma.</p>
+                    </div>
+                  ) : results.valorDesconto > 0 ? (
                     <div className="space-y-1">
                       <div className="flex items-center gap-2 text-white/40 line-through text-sm">
                         <span>{moeda} {formatoMoeda(results.total)}</span>
@@ -3724,9 +3633,9 @@ function AppContent() {
                         </p>
                       )}
                       
-                      {/* Suggestions list */}
-                      <div className="pt-1.5">
-                        <p className="text-[9px] text-white/30 font-semibold uppercase tracking-wider mb-1">Cupons Disponíveis:</p>
+                      {/* Optional coupon suggestions */}
+                      <details className="pt-1.5">
+                        <summary className="text-xs text-white/60 cursor-pointer mb-2">Ver cupões disponíveis</summary>
                         <div className="flex flex-wrap gap-1">
                           {['BEMVINDO'].map(suggestedCode => (
                             <button
@@ -3741,7 +3650,7 @@ function AppContent() {
                             </button>
                           ))}
                         </div>
-                      </div>
+                      </details>
                     </div>
                   )}
                 </div>
@@ -3757,7 +3666,7 @@ function AppContent() {
                   </button>
                   <button 
                     onClick={imprimirFatura} 
-                    disabled={isGeneratingPdf}
+                    disabled={isGeneratingPdf || aliquotasContentorPendentes}
                     className="w-full btn-modern-primary !bg-white !text-corp-blue !shadow-none hover:!bg-slate-100 !py-3 disabled:opacity-50 !px-4"
                   >
                     {isGeneratingPdf ? (
@@ -5311,7 +5220,7 @@ function AppContent() {
                 />
                 <div>
                   <h1 className="text-3xl font-bold text-[#1A284F] mb-1">PrimeWay</h1>
-                  <p className="text-[#2D4C8C] italic text-sm mb-1">Excelência em cada importação</p>
+                  <p className="text-[#2D4C8C] italic text-sm mb-1">Excelência em cada importação.</p>
                   <p className="text-xs text-[#64748b]">NUIT: 402119357</p>
                 </div>
               </div>
@@ -5830,7 +5739,7 @@ function AppContent() {
               <h1 className="text-3xl font-black text-[#1A284F] tracking-wider mb-2">
                 {debitNoteForm.shipMode === 'AIR' ? '✈️ AIR CARGO' : '🚢 SEA CARGO'} DE {debitNoteForm.origin.toUpperCase()} PARA MAPUTO
               </h1>
-              <h2 className="text-xl font-bold text-[#2D4C8C] italic">Excelência em cada importação</h2>
+              <h2 className="text-xl font-bold text-[#2D4C8C] italic">Excelência em cada importação.</h2>
             </div>
             <div className="flex items-center">
                <img src="https://flagcdn.com/w160/mz.png" alt="Mozambique Flag" className="w-[80px] object-cover shadow-sm border border-slate-200" crossOrigin="anonymous"/>
