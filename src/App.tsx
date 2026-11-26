@@ -748,6 +748,11 @@ function AppContent() {
 
   const [showDebitNoteModal, setShowDebitNoteModal] = useState(false);
   const [isGeneratingDebit, setIsGeneratingDebit] = useState(false);
+  const [isSavingDebit, setIsSavingDebit] = useState(false);
+  const [editingDebitId, setEditingDebitId] = useState<string | null>(null);
+  const [debitSaveStatus, setDebitSaveStatus] = useState<'idle' | 'saved' | 'error'>('idle');
+  const [debitSaveMessage, setDebitSaveMessage] = useState<string | null>(null);
+  const [showDebitPreview, setShowDebitPreview] = useState(false);
   interface DebitItem {
     id: string;
     orderNumber: string;
@@ -1029,19 +1034,50 @@ function AppContent() {
   useEffect(() => {
     let active = true;
     let sessionVersion = 0;
+    const adminEmails = new Set(['fabitoliuia7@gmail.com', 'comercial@primewayinvest.com']);
     const unsubscribe = onIdTokenChanged(auth, (currentUser) => {
       const version = ++sessionVersion;
       setUser(currentUser);
       setIsAuthReady(true);
-      setIsAdmin(false);
-      if (!currentUser) return;
-      void checkAdminSession().then(session => {
-        if (active && version === sessionVersion && auth.currentUser?.uid === currentUser.uid) {
-          setIsAdmin(session.admin);
+      if (!currentUser) {
+        setIsAdmin(false);
+        return;
+      }
+      const normalizedEmail = (currentUser.email || '').trim().toLowerCase();
+      const isAllowlistedEmail = adminEmails.has(normalizedEmail);
+      if (isAllowlistedEmail) {
+        setIsAdmin(true);
+      } else {
+        setIsAdmin(false);
+      }
+
+      void (async () => {
+        try {
+          const session = await checkAdminSession();
+          if (active && version === sessionVersion && auth.currentUser?.uid === currentUser.uid) {
+            if (session.admin) {
+              setIsAdmin(true);
+              return;
+            }
+          }
+        } catch {
+          // Fallback to Firestore role check / allowlisted email below when backend session route is unavailable
         }
-      }).catch(() => {
-        if (active && version === sessionVersion) setIsAdmin(false);
-      });
+        try {
+          const userSnap = await getDoc(doc(db, 'users', currentUser.uid));
+          if (active && version === sessionVersion && auth.currentUser?.uid === currentUser.uid) {
+            if (userSnap.exists() && userSnap.data()?.role === 'admin') {
+              setIsAdmin(true);
+              return;
+            }
+          }
+        } catch {
+          // Ignore Firestore fallback read errors
+        }
+        if (active && version === sessionVersion && auth.currentUser?.uid === currentUser.uid) {
+          setIsAdmin(isAllowlistedEmail);
+        }
+      })();
     });
     return () => { active = false; sessionVersion += 1; unsubscribe(); };
   }, []);
@@ -1902,6 +1938,10 @@ function AppContent() {
   };
 
   const preencherDebitNoteComCotacao = () => {
+    setEditingDebitId(null);
+    setDebitSaveStatus('idle');
+    setDebitSaveMessage(null);
+    setShowDebitPreview(false);
     if (aliquotasContentorPendentes) {
       alert('Confirme as alíquotas em falta nos contentores antes de emitir o documento.');
       return;
@@ -2024,6 +2064,63 @@ function AppContent() {
     setShowDebitNoteModal(true);
   };
 
+  const saveDebitNoteRecord = async (): Promise<string | null> => {
+    if (!user) {
+      handleLogin();
+      return null;
+    }
+
+    const totalMZN = debitItems.reduce(
+      (acc, item) => acc + ((parseFloat(String(item.chargeableAmount)) || 0) * (parseFloat(String(item.unitPrice)) || 0)),
+      0
+    );
+
+    const payload = {
+      userId: user.uid,
+      ...debitNoteForm,
+      items: debitItems,
+      totalMZN,
+    };
+
+    if (editingDebitId && isAdmin) {
+      await updateDoc(doc(db, 'debitNotes', editingDebitId), {
+        ...payload,
+        updatedAt: Timestamp.now()
+      });
+      return editingDebitId;
+    } else {
+      const docRef = await addDoc(collection(db, 'debitNotes'), {
+        ...payload,
+        createdAt: Timestamp.now()
+      });
+      setEditingDebitId(docRef.id);
+      return docRef.id;
+    }
+  };
+
+  const handleSaveDebitNote = async () => {
+    if (!user) {
+      handleLogin();
+      return;
+    }
+
+    setIsSavingDebit(true);
+    setDebitSaveStatus('idle');
+    setDebitSaveMessage(null);
+    try {
+      const wasEditing = Boolean(editingDebitId && isAdmin);
+      await saveDebitNoteRecord();
+      setDebitSaveStatus('saved');
+      setDebitSaveMessage(wasEditing ? 'Nota de débito atualizada no histórico!' : 'Nota de débito salva no histórico com sucesso!');
+    } catch (saveError) {
+      console.error("Error saving debit note to history:", saveError);
+      setDebitSaveStatus('error');
+      setDebitSaveMessage('Não foi possível salvar a nota de débito. Verifique a sua ligação ou permissões.');
+    } finally {
+      setIsSavingDebit(false);
+    }
+  };
+
   const gerarDebitNotePDF = async () => {
     const element = document.getElementById('debit-note-print-area');
     if (!element) {
@@ -2034,19 +2131,13 @@ function AppContent() {
     try {
       setIsGeneratingDebit(true);
 
-      // Save to Firebase (History)
+      // Save or update in Firebase (History)
       if (user) {
         try {
-          await addDoc(collection(db, 'debitNotes'), {
-            userId: user.uid,
-            ...debitNoteForm,
-            items: debitItems,
-            totalMZN: debitItems.reduce((acc, item) => acc + ((parseFloat(String(item.chargeableAmount)) || 0) * (parseFloat(String(item.unitPrice)) || 0)), 0),
-            createdAt: Timestamp.now()
-          });
+          await saveDebitNoteRecord();
         } catch (saveError) {
           console.error("Error saving debit note to history:", saveError);
-          handleFirestoreError(saveError, OperationType.CREATE, 'debitNotes');
+          handleFirestoreError(saveError, editingDebitId ? OperationType.UPDATE : OperationType.CREATE, 'debitNotes');
         }
       }
 
@@ -2215,6 +2306,7 @@ function AppContent() {
         onHistory={() => setShowHistory(true)}
         onLogout={handleLogout}
         onSupplierCheck={() => setShowFraudCheck(true)}
+        onOpenDebitNote={preencherDebitNoteComCotacao}
       />
 
       {activeView === 'sourcing' ? (
@@ -4319,6 +4411,17 @@ function AppContent() {
                     Facturas (Debit)
                   </button>
                 )}
+                {isAdmin && historyTab === 'debitNotes' && (
+                  <button
+                    onClick={() => {
+                      setShowHistory(false);
+                      preencherDebitNoteComCotacao();
+                    }}
+                    className="ml-auto mb-1 btn-modern-primary !py-1.5 !px-3.5 !text-[10px] flex items-center gap-1.5"
+                  >
+                    <Plus size={14} /> Nova Nota de Débito
+                  </button>
+                )}
               </div>
               
               <div className="flex-1 overflow-y-auto space-y-4 pr-2">
@@ -4429,6 +4532,10 @@ function AppContent() {
                           <div className="flex gap-2 w-full md:w-auto">
                             <button 
                               onClick={() => {
+                                setEditingDebitId(debit.id);
+                                setDebitSaveStatus('idle');
+                                setDebitSaveMessage(null);
+                                setShowDebitPreview(false);
                                 setDebitNoteForm({
                                   clientInfo: debit.clientInfo || '',
                                   operatorInfo: debit.operatorInfo || '',
@@ -4436,7 +4543,7 @@ function AppContent() {
                                   origin: debit.origin || 'China',
                                   shipMode: debit.shipMode || 'AIR',
                                   priceType: debit.priceType || 'FREIGHT_AND_DUTY',
-                                  paymentType: 'NORMAL',
+                                  paymentType: debit.paymentType || 'NORMAL',
                                 });
                                 setDebitItems(debit.items || []);
                                 setShowHistory(false);
@@ -4448,6 +4555,7 @@ function AppContent() {
                             </button>
                             <button 
                               onClick={async () => {
+                                setEditingDebitId(debit.id);
                                 setDebitNoteForm({
                                   clientInfo: debit.clientInfo || '',
                                   operatorInfo: debit.operatorInfo || '',
@@ -4455,7 +4563,7 @@ function AppContent() {
                                   origin: debit.origin || 'China',
                                   shipMode: debit.shipMode || 'AIR',
                                   priceType: debit.priceType || 'FREIGHT_AND_DUTY',
-                                  paymentType: 'NORMAL',
+                                  paymentType: debit.paymentType || 'NORMAL',
                                 });
                                 setDebitItems(debit.items || []);
                                 setTimeout(() => {
@@ -4657,25 +4765,131 @@ function AppContent() {
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="bg-white rounded-2xl shadow-xl w-full max-w-4xl overflow-hidden my-auto"
+              className="bg-white rounded-2xl shadow-xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden my-auto"
             >
-              <div className="flex items-center justify-between p-6 border-b border-slate-100 bg-slate-50">
+              <div className="flex flex-wrap items-center justify-between gap-3 p-5 sm:p-6 border-b border-slate-100 bg-slate-50 shrink-0">
                 <div className="flex items-center gap-3">
-                  <Search size={24} className="text-corp-blue" />
+                  <FileText size={24} className="text-corp-blue" />
                   <div>
                     <h3 className="font-heading font-bold text-lg text-slate-900">Emitir Debit Note</h3>
                     <p className="text-xs text-slate-500 font-semibold uppercase tracking-widest">Fatura de chegada de carga</p>
                   </div>
                 </div>
-                <button 
-                  onClick={() => setShowDebitNoteModal(false)}
-                  className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors border border-transparent"
-                >
-                  <X size={20} />
-                </button>
+                <div className="flex items-center gap-2">
+                  <div className="inline-flex rounded-xl bg-slate-200/70 p-1">
+                    <button
+                      type="button"
+                      onClick={() => setShowDebitPreview(false)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                        !showDebitPreview ? 'bg-white text-corp-blue shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <Edit size={14} /> Editar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowDebitPreview(true)}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 ${
+                        showDebitPreview ? 'bg-white text-corp-blue shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <Eye size={14} /> Pré-visualizar Preços
+                    </button>
+                  </div>
+                  <button 
+                    onClick={() => setShowDebitNoteModal(false)}
+                    className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition-colors border border-transparent"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
               </div>
 
-              <div className="p-6">
+              <div className="p-5 sm:p-6 overflow-y-auto flex-1">
+                {showDebitPreview ? (
+                  <div className="border-4 border-[#2D4C8C] bg-white rounded-xl overflow-hidden text-[#1A284F] shadow-sm">
+                    <div className="bg-[#f8fafc] border-b-2 border-[#2D4C8C] flex flex-col sm:flex-row items-center justify-between gap-4 px-6 py-5">
+                      <img 
+                        src={logoBase64} 
+                        alt="PrimeWay Logo" 
+                        className="w-28 h-auto object-contain shrink-0"
+                      />
+                      <div className="text-center">
+                        <h4 className="text-base sm:text-xl font-black text-[#1A284F] tracking-wider">
+                          {debitNoteForm.shipMode === 'AIR' ? '✈️ AIR CARGO' : '🚢 SEA CARGO'} DE {debitNoteForm.origin.toUpperCase()} PARA MAPUTO
+                        </h4>
+                        <p className="text-xs sm:text-sm font-bold text-[#2D4C8C] italic">Excelência em cada importação</p>
+                      </div>
+                      <img src="https://flagcdn.com/w160/mz.png" alt="Mozambique Flag" className="w-14 object-cover shadow-sm border border-slate-200 hidden sm:block" />
+                    </div>
+
+                    <div className="text-center py-2.5 bg-[#2D4C8C] text-white">
+                      <h5 className="text-sm sm:text-lg font-black tracking-widest">
+                        {debitNoteForm.paymentType === 'SEPARATE_PAYMENT' ? 'NOTA DE DÉBITO (PAGAMENTO SEPARADO)' :
+                         debitNoteForm.paymentType === 'ADVANCE' ? 'NOTA DE DÉBITO (ADIANTAMENTO)' :
+                         'NOTA DE DÉBITO (DEBIT NOTE)'}
+                      </h5>
+                    </div>
+
+                    <div className="px-5 py-3 flex flex-wrap justify-between items-center gap-2 border-b border-slate-200 text-xs sm:text-sm font-bold text-[#1A284F]">
+                      <div className="uppercase">CLIENTE: <span className="text-[#2D4C8C]">{debitNoteForm.clientInfo || '-'}</span></div>
+                      <div className="uppercase">RASTREIO (ID): <span className="text-[#2D4C8C]">{debitNoteForm.idCode || '-'}</span></div>
+                      <div className="uppercase">OPERADOR: <span className="text-[#2D4C8C]">{debitNoteForm.operatorInfo || '-'}</span></div>
+                    </div>
+
+                    <div className="text-center py-2 border-b border-slate-200 bg-slate-50">
+                      <span className="text-xs font-black text-[#1A284F] tracking-widest uppercase">
+                        {debitNoteForm.priceType === 'FREIGHT_AND_DUTY' ? 'PREÇO INCLUI FRETE E TAXAS ALFANDEGÁRIAS' : debitNoteForm.priceType === 'DUTY_ONLY' ? 'PREÇO INCLUI APENAS TAXAS ALFANDEGÁRIAS' : 'PREÇO INCLUI APENAS O FRETE'}
+                      </span>
+                    </div>
+
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-center border-collapse text-xs sm:text-sm border-b-2 border-[#2D4C8C]">
+                        <thead>
+                          <tr className="bg-[#1A284F] text-white">
+                            <th className="py-2.5 px-2 border-r border-[#2D4C8C] font-bold">Nº PEDIDO</th>
+                            <th className="py-2.5 px-2 border-r border-[#2D4C8C] font-bold">DESCRIÇÃO DA CARGA</th>
+                            <th className="py-2.5 px-2 border-r border-[#2D4C8C] font-bold">VOLUMES (PKGS)</th>
+                            <th className="py-2.5 px-2 border-r border-[#2D4C8C] font-bold">REAL {debitNoteForm.shipMode === 'AIR' ? '(KG)' : '(CBM)'}</th>
+                            <th className="py-2.5 px-2 border-r border-[#2D4C8C] font-bold">TAXÁVEL {debitNoteForm.shipMode === 'AIR' ? '(KG)' : '(CBM)'}</th>
+                            <th className="py-2.5 px-2 border-r border-[#2D4C8C] font-bold">PREÇO UNIT. (MZN)</th>
+                            <th className="py-2.5 px-2 font-bold">SUBTOTAL (MZN)</th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white text-[#1A284F]">
+                          {debitItems.map((item, idx) => {
+                            const chargeable = parseFloat(String(item.chargeableAmount)) || 0;
+                            const price = parseFloat(String(item.unitPrice)) || 0;
+                            const subtotal = chargeable * price;
+                            return (
+                              <tr key={item.id} className={idx % 2 === 0 ? "bg-white" : "bg-slate-50"}>
+                                <td className="py-2.5 px-2 border-r border-slate-200 font-bold uppercase">{item.orderNumber || '-'}</td>
+                                <td className="py-2.5 px-2 border-r border-slate-200 font-bold uppercase text-left">{item.cargoDescription || '-'}</td>
+                                <td className="py-2.5 px-2 border-r border-slate-200 font-bold">{item.pkgs}</td>
+                                <td className="py-2.5 px-2 border-r border-slate-200 font-bold">{item.actualAmount || '-'}</td>
+                                <td className="py-2.5 px-2 border-r border-slate-200 font-bold">{item.chargeableAmount || '0'}</td>
+                                <td className="py-2.5 px-2 border-r border-slate-200 font-bold">{price.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+                                <td className="py-2.5 px-2 font-bold text-[#2D4C8C]">
+                                  {subtotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    <div className="flex flex-col sm:flex-row bg-[#1A284F] text-white">
+                      <div className="sm:w-[70%] py-3.5 px-5 sm:text-right font-black text-sm sm:text-lg tracking-wider sm:border-r border-[#2D4C8C]">
+                        VALOR TOTAL A PAGAR:
+                      </div>
+                      <div className="sm:w-[30%] py-3.5 px-4 text-center font-black text-base sm:text-xl bg-[#2D4C8C]/40 sm:bg-transparent">
+                        MZN {debitItems.reduce((acc, item) => acc + ((parseFloat(String(item.chargeableAmount)) || 0) * (parseFloat(String(item.unitPrice)) || 0)), 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                <>
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6 pb-6 border-b border-slate-100">
                   <div className="col-span-2">
                     <label className="label-corp">Cliente</label>
@@ -4816,8 +5030,12 @@ function AppContent() {
                      </button>
                   </div>
                   
-                  {debitItems.map((item, index) => (
-                    <div key={item.id} className="grid grid-cols-1 md:grid-cols-8 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-100 relative items-start">
+                  {debitItems.map((item, index) => {
+                    const itemChargeable = parseFloat(String(item.chargeableAmount)) || 0;
+                    const itemUnitPrice = parseFloat(String(item.unitPrice)) || 0;
+                    const itemSubtotal = itemChargeable * itemUnitPrice;
+                    return (
+                    <div key={item.id} className="grid grid-cols-1 md:grid-cols-9 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-100 relative items-start">
                       {debitItems.length > 1 && (
                         <button 
                           title="Remover Item"
@@ -4852,11 +5070,57 @@ function AppContent() {
                          <label className="label-corp !text-[10px]">Preço Un.</label>
                          <input type="number" step="any" value={item.unitPrice} onChange={(e) => { const newItems = [...debitItems]; newItems[index].unitPrice = e.target.value; setDebitItems(newItems); }} className="input-modern !py-2 !px-2 text-xs" />
                       </div>
+                      <div>
+                         <label className="label-corp !text-[10px]">Subtotal (MZN)</label>
+                         <div className="bg-white border border-slate-200 rounded-lg py-2 px-2 text-xs font-bold text-corp-blue truncate" title={`MZN ${itemSubtotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}>
+                           {itemSubtotal.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                         </div>
+                      </div>
                     </div>
-                  ))}
+                    );
+                  })}
                 </div>
 
-                <div className="pt-6 flex gap-3 mt-6 border-t border-slate-100">
+                {/* Live Price Summary Bar */}
+                <div className="mt-5 p-4 bg-slate-900 text-white rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex flex-wrap items-center gap-4 sm:gap-6 text-xs">
+                    <div>
+                      <span className="text-slate-400 uppercase tracking-wider font-semibold block text-[10px]">Volumes Totais</span>
+                      <span className="font-bold text-sm">
+                        {debitItems.reduce((acc, item) => acc + (Number(item.pkgs) || 0), 0)} PKGS
+                      </span>
+                    </div>
+                    <div className="border-l border-slate-700 pl-4">
+                      <span className="text-slate-400 uppercase tracking-wider font-semibold block text-[10px]">
+                        Total Taxável ({debitNoteForm.shipMode === 'AIR' ? 'KG' : 'CBM'})
+                      </span>
+                      <span className="font-bold text-sm">
+                        {debitItems.reduce((acc, item) => acc + (parseFloat(String(item.chargeableAmount)) || 0), 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 4 })} {debitNoteForm.shipMode === 'AIR' ? 'KG' : 'CBM'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="sm:text-right border-t sm:border-t-0 border-slate-700 pt-3 sm:pt-0">
+                    <span className="text-amber-300 uppercase tracking-widest font-bold block text-[10px]">Valor Total a Pagar</span>
+                    <span className="text-xl sm:text-2xl font-black tracking-tight text-white">
+                      MZN {debitItems.reduce((acc, item) => acc + ((parseFloat(String(item.chargeableAmount)) || 0) * (parseFloat(String(item.unitPrice)) || 0)), 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </span>
+                  </div>
+                </div>
+                </>
+                )}
+
+                {debitSaveMessage && (
+                  <div className={`mt-5 p-3 rounded-xl text-xs font-semibold flex items-center gap-2 ${
+                    debitSaveStatus === 'saved'
+                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                      : 'bg-red-50 text-red-700 border border-red-200'
+                  }`}>
+                    {debitSaveStatus === 'saved' ? <CheckCircle2 size={16} className="shrink-0" /> : <AlertTriangle size={16} className="shrink-0" />}
+                    <span>{debitSaveMessage}</span>
+                  </div>
+                )}
+
+                <div className="pt-6 flex flex-col sm:flex-row gap-3 mt-6 border-t border-slate-100">
                   <button 
                     onClick={() => setShowDebitNoteModal(false)}
                     className="btn-modern-outline flex-1"
@@ -4864,11 +5128,20 @@ function AppContent() {
                     Cancelar
                   </button>
                   <button 
-                    onClick={gerarDebitNotePDF}
-                    disabled={isGeneratingDebit}
-                    className="btn-modern-primary flex-1 disabled:opacity-50"
+                    onClick={handleSaveDebitNote}
+                    disabled={isSavingDebit || isGeneratingDebit}
+                    className="btn-modern-primary !bg-corp-orange hover:!bg-corp-orange/90 !text-white !shadow-none flex-1 disabled:opacity-50 flex items-center justify-center gap-2"
                   >
-                    {isGeneratingDebit ? "Gerando PDF..." : "Exportar Debit Note PDF"}
+                    {isSavingDebit ? <RotateCcw size={18} className="animate-spin" /> : <Save size={18} />}
+                    <span>{isSavingDebit ? "Salvando..." : editingDebitId ? "Atualizar" : "Salvar"}</span>
+                  </button>
+                  <button 
+                    onClick={gerarDebitNotePDF}
+                    disabled={isGeneratingDebit || isSavingDebit}
+                    className="btn-modern-primary flex-1 disabled:opacity-50 flex items-center justify-center gap-2"
+                  >
+                    {isGeneratingDebit ? <RotateCcw size={18} className="animate-spin" /> : <Printer size={18} />}
+                    <span>{isGeneratingDebit ? "Gerando PDF..." : "Exportar Debit Note PDF"}</span>
                   </button>
                 </div>
               </div>

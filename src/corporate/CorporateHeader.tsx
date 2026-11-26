@@ -15,6 +15,7 @@ interface CorporateHeaderProps {
   onHistory: () => void;
   onLogout: () => void;
   onSupplierCheck: () => void;
+  onOpenDebitNote?: () => void;
 }
 
 const Arrow = () => (
@@ -41,6 +42,7 @@ export function CorporateHeader({
   onHistory,
   onLogout,
   onSupplierCheck,
+  onOpenDebitNote,
 }: CorporateHeaderProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
@@ -148,6 +150,12 @@ export function CorporateHeader({
           Verificação de fornecedores
           <Arrow />
         </button>
+        {isAdmin && onOpenDebitNote && (
+          <button type="button" className="pw-header-tool-link is-emphasis" onClick={() => runAccountAction(onOpenDebitNote)}>
+            Nota de Débito
+            <Arrow />
+          </button>
+        )}
       </div>
     </div>
   );
@@ -178,6 +186,9 @@ export function CorporateHeader({
           </span>
         </button>
         <div className="pw-header-account-links">
+          {isAdmin && onOpenDebitNote && (
+            <button type="button" onClick={() => runAccountAction(onOpenDebitNote)}>Nota de Débito</button>
+          )}
           <button type="button" onClick={() => runAccountAction(onProfile)}>Perfil</button>
           <button type="button" onClick={() => runAccountAction(onHistory)}>
             Histórico
