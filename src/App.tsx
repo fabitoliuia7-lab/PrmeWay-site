@@ -89,6 +89,7 @@ import { toJpeg } from 'html-to-image';
 import { jsPDF } from 'jspdf';
 import { logoBase64 } from './logoBase64';
 import { SourcingModule } from './sourcing/SourcingModule';
+import { ErpModule } from './erp/ErpModule';
 import { AuthModal, AuthTab } from './AuthModal';
 import { UserProfileModal } from './UserProfileModal';
 import { CorporateHeader } from './corporate/CorporateHeader';
@@ -2290,9 +2291,11 @@ function AppContent() {
         </div>
       )}
 
-      <a href={QUOTATION_URL} target="_blank" rel="noopener noreferrer" className="pw-contact-float no-print" aria-label="Contactar a PrimeWay pelo WhatsApp">
-        <MessageCircle size={20} aria-hidden="true" /><span>Fale connosco</span>
-      </a>
+      {activeView !== 'erp' && (
+        <a href={QUOTATION_URL} target="_blank" rel="noopener noreferrer" className="pw-contact-float no-print" aria-label="Contactar a PrimeWay pelo WhatsApp">
+          <MessageCircle size={20} aria-hidden="true" /><span>Fale connosco</span>
+        </a>
+      )}
 
       <CorporateHeader
         activeView={activeView}
@@ -2307,12 +2310,25 @@ function AppContent() {
         onLogout={handleLogout}
         onSupplierCheck={() => setShowFraudCheck(true)}
         onOpenDebitNote={preencherDebitNoteComCotacao}
+        onOpenErp={() => navigateTo('erp')}
       />
 
-      {activeView === 'sourcing' ? (
+      {activeView === 'erp' ? (
+        <ErpModule
+          isAdmin={isAdmin}
+          isAuthReady={isAuthReady}
+          user={user}
+          onExitErp={() => navigateTo('landing')}
+          onOpenLogin={() => setIsAuthModalOpen(true)}
+        />
+      ) : activeView === 'sourcing' ? (
         <SourcingModule
           onBackToCalculator={() => navigateTo('landing', 'simulador')}
           onInjectIntoCalculator={handleInjectIntoCalculator}
+          isAdmin={isAdmin}
+          isAuthReady={isAuthReady}
+          isAuthenticated={Boolean(user)}
+          onOpenLogin={() => setIsAuthModalOpen(true)}
         />
       ) : activeView === 'landing' ? (
         <CorporateLanding onNavigate={navigateTo} />
@@ -2338,6 +2354,12 @@ function AppContent() {
                   className="text-sm font-bold text-corp-blue hover:text-corp-blue-light transition-colors border border-corp-blue/30 px-4 py-2 rounded-lg flex items-center justify-center gap-2 bg-blue-50/50"
                 >
                   <FileText size={16} /> Emitir Factura Débito
+                </button>
+                <button
+                  onClick={() => navigateTo('erp')}
+                  className="text-sm font-bold text-corp-blue hover:text-corp-blue-light transition-colors border border-corp-blue/30 px-4 py-2 rounded-lg flex items-center justify-center gap-2 bg-blue-50/50"
+                >
+                  <Landmark size={16} /> ERP / CRM
                 </button>
               </div>
             )}
@@ -3769,12 +3791,20 @@ function AppContent() {
                     {isGeneratingPdf ? 'Gerando...' : 'Exportar Fatura Proforma'}
                   </button>
                   {isAdmin && (
-                    <button 
-                      onClick={preencherDebitNoteComCotacao}
-                      className="w-full btn-modern-primary !bg-corp-blue/20 !text-white border border-white/30 hover:!bg-corp-blue/30 transition-all !py-3 flex items-center justify-center gap-2 !px-4 shadow-md"
-                    >
-                      <FileText size={18} /> Emitir Factura Débito
-                    </button>
+                    <>
+                      <button 
+                        onClick={preencherDebitNoteComCotacao}
+                        className="w-full btn-modern-primary !bg-corp-blue/20 !text-white border border-white/30 hover:!bg-corp-blue/30 transition-all !py-3 flex items-center justify-center gap-2 !px-4 shadow-md"
+                      >
+                        <FileText size={18} /> Emitir Factura Débito
+                      </button>
+                      <button 
+                        onClick={() => navigateTo('erp')}
+                        className="w-full btn-modern-primary !bg-corp-blue/20 !text-white border border-white/30 hover:!bg-corp-blue/30 transition-all !py-3 flex items-center justify-center gap-2 !px-4 shadow-md"
+                      >
+                        <Landmark size={18} /> Abrir ERP / CRM
+                      </button>
+                    </>
                   )}
                   <button 
                     onClick={limparTudo} 
@@ -4364,13 +4394,15 @@ function AppContent() {
           </motion.div>
         )}
       </AnimatePresence>
-      <CorporateFooter
-        onNavigate={navigateTo}
-        onLegal={topic => setShowLegal(legalTerms[topic])}
-        onSupplierCheck={() => setShowFraudCheck(true)}
-        onInstall={handleInstallClick}
-        showInstall={!isStandalone}
-      />
+      {activeView !== 'erp' && (
+        <CorporateFooter
+          onNavigate={navigateTo}
+          onLegal={topic => setShowLegal(legalTerms[topic])}
+          onSupplierCheck={() => setShowFraudCheck(true)}
+          onInstall={handleInstallClick}
+          showInstall={!isStandalone}
+        />
+      )}
 
       {/* History Modal */}
       <AnimatePresence>

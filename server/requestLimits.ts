@@ -5,7 +5,7 @@ export function createIpLimiter(limit: number, windowMs = 60_000): RequestHandle
   return rateLimit({
     windowMs, limit, standardHeaders: 'draft-8', legacyHeaders: false,
     // trust proxy is explicitly configured by the application; untrusted forwarding is ignored.
-    validate: { xForwardedForHeader: false },
+    validate: { xForwardedForHeader: false, forwardedHeader: false },
     message: { error: 'Demasiados pedidos. Aguarde antes de tentar novamente.' }
   });
 }

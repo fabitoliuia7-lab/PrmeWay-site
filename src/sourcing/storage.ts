@@ -1,11 +1,12 @@
-import { db } from '../firebase';
-import { 
-  collection, 
-  doc, 
-  getDocs, 
-  setDoc, 
-  deleteDoc, 
-  getDocFromServer
+import { auth, db } from '../firebase';
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  setDoc,
+  deleteDoc,
+  writeBatch
 } from 'firebase/firestore';
 import {
   Supplier,
@@ -18,6 +19,69 @@ import {
   SourcingDocument,
   SourcingConfig
 } from './types';
+
+export enum SourcingOperationType {
+  CREATE = 'create',
+  UPDATE = 'update',
+  DELETE = 'delete',
+  LIST = 'list',
+  GET = 'get',
+  WRITE = 'write',
+}
+
+interface FirestoreErrorInfo {
+  error: string;
+  operationType: SourcingOperationType;
+  path: string | null;
+  authInfo: {
+    userId?: string | null;
+    email?: string | null;
+    emailVerified?: boolean | null;
+    isAnonymous?: boolean | null;
+    tenantId?: string | null;
+    providerInfo?: {
+      providerId?: string | null;
+      email?: string | null;
+    }[];
+  };
+}
+
+export function handleSourcingFirestoreError(
+  error: unknown,
+  operationType: SourcingOperationType,
+  path: string | null
+): never {
+  const errInfo: FirestoreErrorInfo = {
+    error: error instanceof Error ? error.message : String(error),
+    authInfo: {
+      userId: auth.currentUser?.uid,
+      email: auth.currentUser?.email,
+      emailVerified: auth.currentUser?.emailVerified,
+      isAnonymous: auth.currentUser?.isAnonymous,
+      tenantId: auth.currentUser?.tenantId,
+      providerInfo: auth.currentUser?.providerData?.map(provider => ({
+        providerId: provider.providerId,
+        email: provider.email,
+      })) || []
+    },
+    operationType,
+    path
+  };
+  console.error('Firestore Error: ', JSON.stringify(errInfo));
+  throw new Error(JSON.stringify(errInfo));
+}
+
+export const SOURCING_COLLECTIONS = {
+  suppliers: 'sourcing_suppliers',
+  contacts: 'sourcing_contacts',
+  products: 'sourcing_products',
+  relations: 'sourcing_product_suppliers',
+  clients: 'sourcing_clients',
+  orders: 'sourcing_orders',
+  quotes: 'sourcing_quotations',
+  documents: 'sourcing_documents',
+  settings: 'sourcing_settings',
+} as const;
 
 export const DEFAULT_CONFIG: SourcingConfig = {
   exchangeRates: {
@@ -324,7 +388,6 @@ export const INITIAL_PRODUCTS: ProductItem[] = [
 ];
 
 export const INITIAL_RELATIONS: ProductSupplierRelation[] = [
-  // Painel Solar associado a FOR-0002
   {
     id: 'REL-0001',
     productId: 'PROD-0001',
@@ -333,7 +396,7 @@ export const INITIAL_RELATIONS: ProductSupplierRelation[] = [
     indicativePrice: 62.50,
     currency: 'USD',
     priceUnit: 'unidade',
-    moq: 62, // 1 pallet padrão
+    moq: 62,
     monthlyCapacity: '100,000 unidades / mês',
     leadTimeDays: 15,
     incoterm: 'FOB',
@@ -345,7 +408,6 @@ export const INITIAL_RELATIONS: ProductSupplierRelation[] = [
     infoSource: 'Cotação oficial assinada via e-mail',
     notes: 'Preço válido para pedidos acima de 1 container 40HQ (620 peças). Embalagem reforçada para transporte marítimo.'
   },
-  // Painel Solar também associado a FOR-0005 (Trading)
   {
     id: 'REL-0002',
     productId: 'PROD-0001',
@@ -366,7 +428,6 @@ export const INITIAL_RELATIONS: ProductSupplierRelation[] = [
     infoSource: 'Visita ao mercado de Yiwu',
     notes: 'Preço ligeiramente mais alto por ser trading, porém permite compras em lotes pequenos fracionados (LCL).'
   },
-  // Porcelanato associado a FOR-0001
   {
     id: 'REL-0003',
     productId: 'PROD-0002',
@@ -375,7 +436,7 @@ export const INITIAL_RELATIONS: ProductSupplierRelation[] = [
     indicativePrice: 6.80,
     currency: 'USD',
     priceUnit: 'caixa',
-    moq: 500, // caixas
+    moq: 500,
     monthlyCapacity: '50 containers / mês',
     leadTimeDays: 20,
     incoterm: 'FOB',
@@ -387,7 +448,6 @@ export const INITIAL_RELATIONS: ProductSupplierRelation[] = [
     infoSource: 'Catálogo Feira de Cantão',
     notes: 'Amostras gratuitas mediante pagamento do frete expresso pelo cliente. Embalagem paletizada reforçada com cantoneiras plásticas.'
   },
-  // Cadeira Ergonómica associada a FOR-0003
   {
     id: 'REL-0004',
     productId: 'PROD-0003',
@@ -408,7 +468,6 @@ export const INITIAL_RELATIONS: ProductSupplierRelation[] = [
     infoSource: 'Negociação direta WeChat',
     notes: 'Opção de gravação do logotipo da empresa compradora no encosto a partir de 200 peças sem custo adicional.'
   },
-  // SSD associado a FOR-0004
   {
     id: 'REL-0005',
     productId: 'PROD-0004',
@@ -666,7 +725,6 @@ export function getInitialSourcingStore(): SourcingStore {
   const loadedRelations = loadFromLocal<ProductSupplierRelation[]>('relations', INITIAL_RELATIONS);
   const rawProducts = loadFromLocal<ProductItem[]>('products', INITIAL_PRODUCTS);
 
-  // Sanitize products: remove any fallback to the company logo and ensure price/MOQ are populated
   const loadedProducts = rawProducts.map(prod => {
     const cleanImages = (prod.images || []).filter(img => img && img !== '/IMG-20260215-WA0003.jpg');
     const matchedRelations = loadedRelations.filter(r => r.productId === prod.id);
@@ -730,3 +788,587 @@ export function resetToDefaultSeed(): SourcingStore {
   return defaultStore;
 }
 
+// --- Payload Sanitizers (strictly aligned with firebase-blueprint.json & firestore.rules) ---
+
+function stripUndefined<T>(obj: T): T {
+  if (Array.isArray(obj)) {
+    return obj.filter(item => item !== undefined).map(item => stripUndefined(item)) as unknown as T;
+  }
+  if (obj !== null && typeof obj === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(obj)) {
+      if (v !== undefined) {
+        out[k] = stripUndefined(v);
+      }
+    }
+    return out as T;
+  }
+  return obj;
+}
+
+const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+
+function sanitizeOptionalEmail(email?: string): string {
+  const trimmed = (email || '').trim();
+  return EMAIL_REGEX.test(trimmed) ? trimmed : '';
+}
+
+function clampString(val: unknown, maxLen: number): string {
+  return String(val ?? '').slice(0, maxLen);
+}
+
+export function sanitizeSupplierForFirestore(s: Supplier): Supplier {
+  const allowedPlatforms = ['1688', 'Alibaba', 'Made-in-China', 'Canton Fair', 'Contacto Direto', 'Indicação', 'Outro'];
+  const allowedTypes = ['fabricante', 'trading_company', 'grossista', 'agente'];
+  const allowedStatus = ['ativo', 'em_avaliacao', 'inativo', 'blacklisted'];
+  const allowedTrust = ['ouro', 'verificado', 'padrao', 'alto_risco'];
+  const rating = Math.min(5, Math.max(1, Number(s.internalRating) || 5));
+
+  return stripUndefined({
+    id: clampString(s.id, 128),
+    companyName: clampString(s.companyName || 'Fornecedor', 300),
+    chineseName: clampString(s.chineseName, 300),
+    supplierType: allowedTypes.includes(s.supplierType) ? s.supplierType : 'fabricante',
+    country: clampString(s.country || 'China', 100),
+    province: clampString(s.province, 120),
+    city: clampString(s.city, 120),
+    website: clampString(s.website, 500),
+    originPlatform: allowedPlatforms.includes(s.originPlatform) ? s.originPlatform : 'Outro',
+    status: allowedStatus.includes(s.status) ? s.status : 'ativo',
+    trustLevel: allowedTrust.includes(s.trustLevel) ? s.trustLevel : 'padrao',
+    internalRating: rating,
+    notes: clampString(s.notes, 4000),
+    createdAt: clampString(s.createdAt || new Date().toISOString(), 64),
+  });
+}
+
+export function sanitizeContactForFirestore(c: SupplierContact): SupplierContact {
+  return stripUndefined({
+    id: clampString(c.id, 128),
+    supplierId: clampString(c.supplierId, 128),
+    name: clampString(c.name || 'Contacto', 200),
+    role: clampString(c.role, 150),
+    phone: clampString(c.phone, 64),
+    whatsapp: clampString(c.whatsapp, 64),
+    wechat: clampString(c.wechat, 100),
+    email: sanitizeOptionalEmail(c.email),
+    language: clampString(c.language, 100),
+    isPrimary: Boolean(c.isPrimary),
+  });
+}
+
+export function sanitizeProductForFirestore(p: ProductItem): ProductItem {
+  const allowedStatus = ['ativo', 'em_desenvolvimento', 'descontinuado'];
+  const allowedCurrencies = ['USD', 'CNY', 'MZN'];
+  const allowedUnits = ['unidade', 'metro', 'kg', 'caixa', 'set', 'par'];
+  const cleanImages = (p.images || [])
+    .filter(img => typeof img === 'string' && img.length > 0 && img.length <= 350000 && (img.startsWith('http://') || img.startsWith('https://') || img.startsWith('data:image/')))
+    .slice(0, 5);
+
+  return stripUndefined({
+    id: clampString(p.id, 128),
+    namePt: clampString(p.namePt || 'Produto', 300),
+    nameEn: clampString(p.nameEn, 300),
+    nameCn: clampString(p.nameCn, 300),
+    category: clampString(p.category || 'Geral', 150),
+    description: clampString(p.description, 4000),
+    material: clampString(p.material, 500),
+    dimensions: {
+      lengthCm: Math.max(0, Number(p.dimensions?.lengthCm) || 0),
+      widthCm: Math.max(0, Number(p.dimensions?.widthCm) || 0),
+      heightCm: Math.max(0, Number(p.dimensions?.heightCm) || 0),
+      cbmUnit: Math.max(0, Number(p.dimensions?.cbmUnit) || 0),
+    },
+    weightKg: Math.max(0, Number(p.weightKg) || 0),
+    hsCode: clampString(p.hsCode, 32),
+    keywords: (p.keywords || []).filter(k => typeof k === 'string').slice(0, 50),
+    images: cleanImages,
+    status: allowedStatus.includes(p.status) ? p.status : 'ativo',
+    createdAt: clampString(p.createdAt || new Date().toISOString(), 64),
+    indicativePrice: p.indicativePrice !== undefined ? Math.max(0, Number(p.indicativePrice) || 0) : undefined,
+    currency: p.currency && allowedCurrencies.includes(p.currency) ? p.currency : 'USD',
+    priceUnit: p.priceUnit && allowedUnits.includes(p.priceUnit) ? p.priceUnit : 'unidade',
+    moq: p.moq !== undefined ? Math.max(0, Number(p.moq) || 0) : undefined,
+    defaultSupplierId: p.defaultSupplierId ? clampString(p.defaultSupplierId, 128) : undefined,
+  });
+}
+
+export function sanitizeRelationForFirestore(r: ProductSupplierRelation): ProductSupplierRelation {
+  const allowedCurrencies = ['USD', 'CNY', 'MZN'];
+  const allowedUnits = ['unidade', 'metro', 'kg', 'caixa', 'set', 'par'];
+  const allowedIncoterms = ['EXW', 'FOB', 'CIF', 'DDP'];
+
+  return stripUndefined({
+    id: clampString(r.id, 128),
+    productId: clampString(r.productId, 128),
+    supplierId: clampString(r.supplierId, 128),
+    supplierRef: clampString(r.supplierRef, 150),
+    indicativePrice: Math.max(0, Number(r.indicativePrice) || 0),
+    currency: allowedCurrencies.includes(r.currency) ? r.currency : 'USD',
+    priceUnit: allowedUnits.includes(r.priceUnit) ? r.priceUnit : 'unidade',
+    moq: Math.max(0, Number(r.moq) || 0),
+    monthlyCapacity: clampString(r.monthlyCapacity, 200),
+    leadTimeDays: Math.max(0, Number(r.leadTimeDays) || 0),
+    incoterm: allowedIncoterms.includes(r.incoterm) ? r.incoterm : 'FOB',
+    loadingPort: clampString(r.loadingPort, 150),
+    paymentTerms: r.paymentTerms !== undefined ? clampString(r.paymentTerms, 500) : undefined,
+    contractUrl: r.contractUrl !== undefined ? clampString(r.contractUrl, 1000) : undefined,
+    customizationAvailable: Boolean(r.customizationAvailable),
+    sampleAvailable: Boolean(r.sampleAvailable),
+    sampleCost: r.sampleCost !== undefined ? Math.max(0, Number(r.sampleCost) || 0) : undefined,
+    priceDate: clampString(r.priceDate, 64),
+    infoSource: clampString(r.infoSource, 300),
+    notes: clampString(r.notes, 4000),
+  });
+}
+
+export function sanitizeClientForFirestore(c: SourcingClient): SourcingClient {
+  return stripUndefined({
+    id: clampString(c.id, 128),
+    name: clampString(c.name || 'Cliente', 200),
+    company: clampString(c.company || 'Empresa', 300),
+    nuit: clampString(c.nuit, 64),
+    phone: clampString(c.phone, 64),
+    email: sanitizeOptionalEmail(c.email),
+    city: clampString(c.city, 120),
+    address: clampString(c.address, 400),
+    notes: clampString(c.notes, 4000),
+    createdAt: clampString(c.createdAt || new Date().toISOString(), 64),
+  });
+}
+
+export function sanitizeOrderForFirestore(o: SourcingOrder): SourcingOrder {
+  const allowedCurrencies = ['USD', 'CNY', 'MZN'];
+  const allowedStatus = ['aberto', 'em_pesquisa', 'cotacoes_recebidas', 'proposta_enviada', 'aprovado', 'concluido', 'cancelado'];
+  const allowedPriority = ['baixa', 'media', 'alta', 'urgente'];
+
+  return stripUndefined({
+    id: clampString(o.id, 128),
+    clientId: clampString(o.clientId, 128),
+    productId: o.productId ? clampString(o.productId, 128) : undefined,
+    requestedProduct: clampString(o.requestedProduct || 'Pedido', 400),
+    description: clampString(o.description, 4000),
+    quantity: Math.max(0, Number(o.quantity) || 0),
+    budget: Math.max(0, Number(o.budget) || 0),
+    currency: allowedCurrencies.includes(o.currency) ? o.currency : 'USD',
+    mozambiqueDestination: clampString(o.mozambiqueDestination, 200),
+    deadline: clampString(o.deadline, 64),
+    customization: clampString(o.customization, 1000),
+    status: allowedStatus.includes(o.status) ? o.status : 'aberto',
+    priority: allowedPriority.includes(o.priority) ? o.priority : 'media',
+    assignedTo: clampString(o.assignedTo, 200),
+    createdAt: clampString(o.createdAt || new Date().toISOString(), 64),
+  });
+}
+
+export function sanitizeQuotationForFirestore(q: Quotation): Quotation {
+  const allowedCurrencies = ['USD', 'CNY', 'MZN'];
+  const allowedIncoterms = ['EXW', 'FOB', 'CIF', 'DDP'];
+  const allowedStatus = ['recebida', 'em_analise', 'selecionada', 'aprovada', 'rejeitada'];
+
+  return stripUndefined({
+    id: clampString(q.id, 128),
+    orderId: clampString(q.orderId, 128),
+    supplierId: clampString(q.supplierId, 128),
+    productId: q.productId ? clampString(q.productId, 128) : undefined,
+    requestDate: clampString(q.requestDate, 64),
+    responseDate: clampString(q.responseDate, 64),
+    quotationDate: q.quotationDate !== undefined ? clampString(q.quotationDate, 64) : undefined,
+    validUntil: clampString(q.validUntil, 64),
+    validityDate: q.validityDate !== undefined ? clampString(q.validityDate, 64) : undefined,
+    unitPrice: Math.max(0, Number(q.unitPrice) || 0),
+    quantity: Math.max(0, Number(q.quantity) || 0),
+    quotedQuantity: q.quotedQuantity !== undefined ? Math.max(0, Number(q.quotedQuantity) || 0) : undefined,
+    currency: allowedCurrencies.includes(q.currency) ? q.currency : 'USD',
+    incoterm: allowedIncoterms.includes(q.incoterm) ? q.incoterm : 'FOB',
+    loadingPort: clampString(q.loadingPort, 150),
+    destinationPort: q.destinationPort !== undefined ? clampString(q.destinationPort, 150) : undefined,
+    estimatedFreight: Math.max(0, Number(q.estimatedFreight) || 0),
+    estimatedFreightUSD: q.estimatedFreightUSD !== undefined ? Math.max(0, Number(q.estimatedFreightUSD) || 0) : undefined,
+    estimatedInsurance: q.estimatedInsurance !== undefined ? Math.max(0, Number(q.estimatedInsurance) || 0) : undefined,
+    estimatedInsuranceUSD: q.estimatedInsuranceUSD !== undefined ? Math.max(0, Number(q.estimatedInsuranceUSD) || 0) : undefined,
+    productionLeadTimeDays: Math.max(0, Number(q.productionLeadTimeDays) || 0),
+    leadTimeDays: q.leadTimeDays !== undefined ? Math.max(0, Number(q.leadTimeDays) || 0) : undefined,
+    estimatedDeliveryDays: q.estimatedDeliveryDays !== undefined ? Math.max(0, Number(q.estimatedDeliveryDays) || 0) : undefined,
+    paymentTerms: clampString(q.paymentTerms, 500),
+    internalRating: Math.min(5, Math.max(0, Number(q.internalRating) || 5)),
+    quoteRating: q.quoteRating !== undefined ? Math.min(5, Math.max(0, Number(q.quoteRating) || 5)) : undefined,
+    status: allowedStatus.includes(q.status) ? q.status : 'recebida',
+    attachmentUrl: q.attachmentUrl !== undefined ? clampString(q.attachmentUrl, 1000) : undefined,
+    totalMerchandise: q.totalMerchandise !== undefined ? Math.max(0, Number(q.totalMerchandise) || 0) : undefined,
+    notes: clampString(q.notes, 4000),
+    createdAt: clampString(q.createdAt || new Date().toISOString(), 64),
+  });
+}
+
+export function sanitizeDocumentForFirestore(d: SourcingDocument): SourcingDocument {
+  const allowedEntityTypes = ['fornecedor', 'produto', 'pedido', 'cotacao'];
+  const allowedDocTypes = ['catalogo_pdf', 'ficha_tecnica', 'licenca_comercial', 'relatorio_inspecao', 'fatura_proforma', 'foto_produto', 'outro', 'catalogo', 'licenca', 'inspecao', 'proforma'];
+  const rawUrl = (d.fileUrl || '').trim();
+  const safeUrl = rawUrl.startsWith('http://') || rawUrl.startsWith('https://') ? rawUrl.slice(0, 2000) : `https://${rawUrl}`.slice(0, 2000);
+
+  return stripUndefined({
+    id: clampString(d.id, 128),
+    entityType: d.entityType && allowedEntityTypes.includes(d.entityType) ? d.entityType : undefined,
+    entityId: d.entityId ? clampString(d.entityId, 128) : undefined,
+    supplierId: d.supplierId ? clampString(d.supplierId, 128) : undefined,
+    productId: d.productId ? clampString(d.productId, 128) : undefined,
+    title: clampString(d.title || 'Documento', 300),
+    docType: d.docType && allowedDocTypes.includes(d.docType) ? d.docType : undefined,
+    documentType: d.documentType && allowedDocTypes.includes(d.documentType) ? d.documentType : undefined,
+    fileUrl: safeUrl,
+    fileSize: d.fileSize ? clampString(d.fileSize, 64) : undefined,
+    description: d.description !== undefined ? clampString(d.description, 2000) : undefined,
+    uploadedAt: clampString(d.uploadedAt || new Date().toISOString(), 64),
+    notes: d.notes !== undefined ? clampString(d.notes, 2000) : undefined,
+  });
+}
+
+export function sanitizeSettingsForFirestore(cfg: SourcingConfig): SourcingConfig {
+  const usdMzn = Number(cfg.exchangeRates?.USD_MZN || cfg.exchangeRates?.USD_TO_MZN) || 64.0;
+  const usdCny = Number(cfg.exchangeRates?.USD_CNY || cfg.exchangeRates?.USD_TO_CNY) || 7.23;
+  const cnyMzn = Number(cfg.exchangeRates?.CNY_MZN) || Number((usdMzn / usdCny).toFixed(2));
+  const loadingPorts = (cfg.defaultLoadingPorts || cfg.defaultChinesePorts || DEFAULT_CONFIG.defaultLoadingPorts).slice(0, 50);
+
+  return stripUndefined({
+    exchangeRates: {
+      USD_MZN: usdMzn > 0 ? usdMzn : 64.0,
+      CNY_MZN: cnyMzn > 0 ? cnyMzn : 8.85,
+      USD_CNY: usdCny > 0 ? usdCny : 7.23,
+      USD_TO_MZN: usdMzn > 0 ? usdMzn : 64.0,
+      USD_TO_CNY: usdCny > 0 ? usdCny : 7.23,
+    },
+    defaultLoadingPorts: loadingPorts,
+    defaultChinesePorts: (cfg.defaultChinesePorts || loadingPorts).slice(0, 50),
+    mozambiqueDestinations: (cfg.mozambiqueDestinations || DEFAULT_CONFIG.mozambiqueDestinations).slice(0, 50),
+    productCategories: (cfg.productCategories || DEFAULT_CONFIG.productCategories).slice(0, 50),
+  });
+}
+
+async function commitBatchOperations(operations: Array<(batch: ReturnType<typeof writeBatch>) => void>): Promise<void> {
+  const CHUNK_SIZE = 400;
+  for (let i = 0; i < operations.length; i += CHUNK_SIZE) {
+    const batch = writeBatch(db);
+    const chunk = operations.slice(i, i + CHUNK_SIZE);
+    for (const op of chunk) {
+      op(batch);
+    }
+    await batch.commit();
+  }
+}
+
+export async function writeStoreToFirestore(store: SourcingStore): Promise<void> {
+  const ops: Array<(batch: ReturnType<typeof writeBatch>) => void> = [];
+
+  for (const s of store.suppliers) {
+    const clean = sanitizeSupplierForFirestore(s);
+    ops.push(b => b.set(doc(db, SOURCING_COLLECTIONS.suppliers, clean.id), clean));
+  }
+  for (const c of store.contacts) {
+    const clean = sanitizeContactForFirestore(c);
+    ops.push(b => b.set(doc(db, SOURCING_COLLECTIONS.contacts, clean.id), clean));
+  }
+  for (const p of store.products) {
+    const clean = sanitizeProductForFirestore(p);
+    ops.push(b => b.set(doc(db, SOURCING_COLLECTIONS.products, clean.id), clean));
+  }
+  for (const r of store.relations) {
+    const clean = sanitizeRelationForFirestore(r);
+    ops.push(b => b.set(doc(db, SOURCING_COLLECTIONS.relations, clean.id), clean));
+  }
+  for (const cl of store.clients) {
+    const clean = sanitizeClientForFirestore(cl);
+    ops.push(b => b.set(doc(db, SOURCING_COLLECTIONS.clients, clean.id), clean));
+  }
+  for (const o of store.orders) {
+    const clean = sanitizeOrderForFirestore(o);
+    ops.push(b => b.set(doc(db, SOURCING_COLLECTIONS.orders, clean.id), clean));
+  }
+  for (const q of store.quotes) {
+    const clean = sanitizeQuotationForFirestore(q);
+    ops.push(b => b.set(doc(db, SOURCING_COLLECTIONS.quotes, clean.id), clean));
+  }
+  for (const d of store.documents) {
+    const clean = sanitizeDocumentForFirestore(d);
+    ops.push(b => b.set(doc(db, SOURCING_COLLECTIONS.documents, clean.id), clean));
+  }
+  const cleanCfg = sanitizeSettingsForFirestore(store.settings || store.config || DEFAULT_CONFIG);
+  ops.push(b => b.set(doc(db, SOURCING_COLLECTIONS.settings, 'default'), cleanCfg));
+
+  try {
+    await commitBatchOperations(ops);
+  } catch (error) {
+    handleSourcingFirestoreError(error, SourcingOperationType.WRITE, 'sourcing_batch');
+  }
+}
+
+export async function loadSourcingFromFirestore(): Promise<{ store: SourcingStore; migratedFromLocal: boolean }> {
+  try {
+    const [
+      supSnap,
+      contSnap,
+      prodSnap,
+      relSnap,
+      cliSnap,
+      ordSnap,
+      quoteSnap,
+      docSnap,
+      cfgSnap,
+    ] = await Promise.all([
+      getDocs(collection(db, SOURCING_COLLECTIONS.suppliers)),
+      getDocs(collection(db, SOURCING_COLLECTIONS.contacts)),
+      getDocs(collection(db, SOURCING_COLLECTIONS.products)),
+      getDocs(collection(db, SOURCING_COLLECTIONS.relations)),
+      getDocs(collection(db, SOURCING_COLLECTIONS.clients)),
+      getDocs(collection(db, SOURCING_COLLECTIONS.orders)),
+      getDocs(collection(db, SOURCING_COLLECTIONS.quotes)),
+      getDocs(collection(db, SOURCING_COLLECTIONS.documents)),
+      getDoc(doc(db, SOURCING_COLLECTIONS.settings, 'default')),
+    ]);
+
+    const hasAnyCloudData =
+      !supSnap.empty ||
+      !contSnap.empty ||
+      !prodSnap.empty ||
+      !relSnap.empty ||
+      !cliSnap.empty ||
+      !ordSnap.empty ||
+      !quoteSnap.empty ||
+      !docSnap.empty ||
+      cfgSnap.exists();
+
+    if (!hasAnyCloudData) {
+      // Auto-migrate any existing localStorage edits (or initial seed) to Firestore on first admin load
+      const localStore = getInitialSourcingStore();
+      await writeStoreToFirestore(localStore);
+      return { store: localStore, migratedFromLocal: true };
+    }
+
+    const sortByCreatedDesc = <T extends { createdAt?: string; uploadedAt?: string; id: string }>(arr: T[]): T[] =>
+      [...arr].sort((a, b) => {
+        const ta = a.createdAt || a.uploadedAt || '';
+        const tb = b.createdAt || b.uploadedAt || '';
+        return tb.localeCompare(ta) || b.id.localeCompare(a.id);
+      });
+
+    const loadedConfig = cfgSnap.exists()
+      ? sanitizeSettingsForFirestore(cfgSnap.data() as SourcingConfig)
+      : DEFAULT_CONFIG;
+
+    const store: SourcingStore = {
+      suppliers: sortByCreatedDesc(supSnap.docs.map(d => d.data() as Supplier)),
+      contacts: contSnap.docs.map(d => d.data() as SupplierContact),
+      products: sortByCreatedDesc(prodSnap.docs.map(d => d.data() as ProductItem)),
+      relations: relSnap.docs.map(d => d.data() as ProductSupplierRelation),
+      clients: sortByCreatedDesc(cliSnap.docs.map(d => d.data() as SourcingClient)),
+      orders: sortByCreatedDesc(ordSnap.docs.map(d => d.data() as SourcingOrder)),
+      quotes: sortByCreatedDesc(quoteSnap.docs.map(d => d.data() as Quotation)),
+      documents: sortByCreatedDesc(docSnap.docs.map(d => d.data() as SourcingDocument)),
+      config: loadedConfig,
+      settings: loadedConfig,
+    };
+
+    saveSourcingData(store);
+    return { store, migratedFromLocal: false };
+  } catch (error) {
+    handleSourcingFirestoreError(error, SourcingOperationType.LIST, SOURCING_COLLECTIONS.suppliers);
+  }
+}
+
+export async function persistSupplierAndContacts(
+  supplier: Supplier,
+  contacts: SupplierContact[],
+  removedContactIds: string[]
+): Promise<void> {
+  const cleanSupplier = sanitizeSupplierForFirestore(supplier);
+  const ops: Array<(batch: ReturnType<typeof writeBatch>) => void> = [
+    b => b.set(doc(db, SOURCING_COLLECTIONS.suppliers, cleanSupplier.id), cleanSupplier),
+  ];
+
+  for (const cid of removedContactIds) {
+    ops.push(b => b.delete(doc(db, SOURCING_COLLECTIONS.contacts, cid)));
+  }
+  for (const c of contacts) {
+    const cleanContact = sanitizeContactForFirestore(c);
+    ops.push(b => b.set(doc(db, SOURCING_COLLECTIONS.contacts, cleanContact.id), cleanContact));
+  }
+
+  try {
+    await commitBatchOperations(ops);
+  } catch (error) {
+    handleSourcingFirestoreError(error, SourcingOperationType.WRITE, `${SOURCING_COLLECTIONS.suppliers}/${cleanSupplier.id}`);
+  }
+}
+
+export async function removeSupplierFromFirestore(
+  supplierId: string,
+  contactIds: string[],
+  relationIds: string[]
+): Promise<void> {
+  const ops: Array<(batch: ReturnType<typeof writeBatch>) => void> = [
+    b => b.delete(doc(db, SOURCING_COLLECTIONS.suppliers, supplierId)),
+  ];
+  for (const cid of contactIds) {
+    ops.push(b => b.delete(doc(db, SOURCING_COLLECTIONS.contacts, cid)));
+  }
+  for (const rid of relationIds) {
+    ops.push(b => b.delete(doc(db, SOURCING_COLLECTIONS.relations, rid)));
+  }
+  try {
+    await commitBatchOperations(ops);
+  } catch (error) {
+    handleSourcingFirestoreError(error, SourcingOperationType.DELETE, `${SOURCING_COLLECTIONS.suppliers}/${supplierId}`);
+  }
+}
+
+export async function persistProduct(product: ProductItem): Promise<void> {
+  const clean = sanitizeProductForFirestore(product);
+  const path = `${SOURCING_COLLECTIONS.products}/${clean.id}`;
+  try {
+    await setDoc(doc(db, SOURCING_COLLECTIONS.products, clean.id), clean);
+  } catch (error) {
+    handleSourcingFirestoreError(error, SourcingOperationType.WRITE, path);
+  }
+}
+
+export async function removeProductFromFirestore(productId: string, relationIds: string[]): Promise<void> {
+  const ops: Array<(batch: ReturnType<typeof writeBatch>) => void> = [
+    b => b.delete(doc(db, SOURCING_COLLECTIONS.products, productId)),
+  ];
+  for (const rid of relationIds) {
+    ops.push(b => b.delete(doc(db, SOURCING_COLLECTIONS.relations, rid)));
+  }
+  try {
+    await commitBatchOperations(ops);
+  } catch (error) {
+    handleSourcingFirestoreError(error, SourcingOperationType.DELETE, `${SOURCING_COLLECTIONS.products}/${productId}`);
+  }
+}
+
+export async function persistRelation(relation: ProductSupplierRelation): Promise<void> {
+  const clean = sanitizeRelationForFirestore(relation);
+  const path = `${SOURCING_COLLECTIONS.relations}/${clean.id}`;
+  try {
+    await setDoc(doc(db, SOURCING_COLLECTIONS.relations, clean.id), clean);
+  } catch (error) {
+    handleSourcingFirestoreError(error, SourcingOperationType.WRITE, path);
+  }
+}
+
+export async function removeRelationFromFirestore(relationId: string): Promise<void> {
+  const path = `${SOURCING_COLLECTIONS.relations}/${relationId}`;
+  try {
+    await deleteDoc(doc(db, SOURCING_COLLECTIONS.relations, relationId));
+  } catch (error) {
+    handleSourcingFirestoreError(error, SourcingOperationType.DELETE, path);
+  }
+}
+
+export async function persistOrder(order: SourcingOrder): Promise<void> {
+  const clean = sanitizeOrderForFirestore(order);
+  const path = `${SOURCING_COLLECTIONS.orders}/${clean.id}`;
+  try {
+    await setDoc(doc(db, SOURCING_COLLECTIONS.orders, clean.id), clean);
+  } catch (error) {
+    handleSourcingFirestoreError(error, SourcingOperationType.WRITE, path);
+  }
+}
+
+export async function removeOrderFromFirestore(orderId: string): Promise<void> {
+  const path = `${SOURCING_COLLECTIONS.orders}/${orderId}`;
+  try {
+    await deleteDoc(doc(db, SOURCING_COLLECTIONS.orders, orderId));
+  } catch (error) {
+    handleSourcingFirestoreError(error, SourcingOperationType.DELETE, path);
+  }
+}
+
+export async function persistQuotation(quote: Quotation): Promise<void> {
+  const clean = sanitizeQuotationForFirestore(quote);
+  const path = `${SOURCING_COLLECTIONS.quotes}/${clean.id}`;
+  try {
+    await setDoc(doc(db, SOURCING_COLLECTIONS.quotes, clean.id), clean);
+  } catch (error) {
+    handleSourcingFirestoreError(error, SourcingOperationType.WRITE, path);
+  }
+}
+
+export async function removeQuotationFromFirestore(quoteId: string): Promise<void> {
+  const path = `${SOURCING_COLLECTIONS.quotes}/${quoteId}`;
+  try {
+    await deleteDoc(doc(db, SOURCING_COLLECTIONS.quotes, quoteId));
+  } catch (error) {
+    handleSourcingFirestoreError(error, SourcingOperationType.DELETE, path);
+  }
+}
+
+export async function persistDocument(docItem: SourcingDocument): Promise<void> {
+  const clean = sanitizeDocumentForFirestore(docItem);
+  const path = `${SOURCING_COLLECTIONS.documents}/${clean.id}`;
+  try {
+    await setDoc(doc(db, SOURCING_COLLECTIONS.documents, clean.id), clean);
+  } catch (error) {
+    handleSourcingFirestoreError(error, SourcingOperationType.WRITE, path);
+  }
+}
+
+export async function removeDocumentFromFirestore(docId: string): Promise<void> {
+  const path = `${SOURCING_COLLECTIONS.documents}/${docId}`;
+  try {
+    await deleteDoc(doc(db, SOURCING_COLLECTIONS.documents, docId));
+  } catch (error) {
+    handleSourcingFirestoreError(error, SourcingOperationType.DELETE, path);
+  }
+}
+
+export async function persistClient(client: SourcingClient): Promise<void> {
+  const clean = sanitizeClientForFirestore(client);
+  const path = `${SOURCING_COLLECTIONS.clients}/${clean.id}`;
+  try {
+    await setDoc(doc(db, SOURCING_COLLECTIONS.clients, clean.id), clean);
+  } catch (error) {
+    handleSourcingFirestoreError(error, SourcingOperationType.WRITE, path);
+  }
+}
+
+export async function removeClientFromFirestore(clientId: string): Promise<void> {
+  const path = `${SOURCING_COLLECTIONS.clients}/${clientId}`;
+  try {
+    await deleteDoc(doc(db, SOURCING_COLLECTIONS.clients, clientId));
+  } catch (error) {
+    handleSourcingFirestoreError(error, SourcingOperationType.DELETE, path);
+  }
+}
+
+export async function persistSourcingSettings(settings: SourcingConfig): Promise<void> {
+  const clean = sanitizeSettingsForFirestore(settings);
+  const path = `${SOURCING_COLLECTIONS.settings}/default`;
+  try {
+    await setDoc(doc(db, SOURCING_COLLECTIONS.settings, 'default'), clean);
+  } catch (error) {
+    handleSourcingFirestoreError(error, SourcingOperationType.WRITE, path);
+  }
+}
+
+export async function resetSourcingFirestoreToSeed(currentStore: SourcingStore): Promise<SourcingStore> {
+  const ops: Array<(batch: ReturnType<typeof writeBatch>) => void> = [];
+  for (const s of currentStore.suppliers) ops.push(b => b.delete(doc(db, SOURCING_COLLECTIONS.suppliers, s.id)));
+  for (const c of currentStore.contacts) ops.push(b => b.delete(doc(db, SOURCING_COLLECTIONS.contacts, c.id)));
+  for (const p of currentStore.products) ops.push(b => b.delete(doc(db, SOURCING_COLLECTIONS.products, p.id)));
+  for (const r of currentStore.relations) ops.push(b => b.delete(doc(db, SOURCING_COLLECTIONS.relations, r.id)));
+  for (const cl of currentStore.clients) ops.push(b => b.delete(doc(db, SOURCING_COLLECTIONS.clients, cl.id)));
+  for (const o of currentStore.orders) ops.push(b => b.delete(doc(db, SOURCING_COLLECTIONS.orders, o.id)));
+  for (const q of currentStore.quotes) ops.push(b => b.delete(doc(db, SOURCING_COLLECTIONS.quotes, q.id)));
+  for (const d of currentStore.documents) ops.push(b => b.delete(doc(db, SOURCING_COLLECTIONS.documents, d.id)));
+
+  try {
+    if (ops.length > 0) {
+      await commitBatchOperations(ops);
+    }
+    const fresh = resetToDefaultSeed();
+    await writeStoreToFirestore(fresh);
+    return fresh;
+  } catch (error) {
+    handleSourcingFirestoreError(error, SourcingOperationType.WRITE, 'sourcing_reset');
+  }
+}

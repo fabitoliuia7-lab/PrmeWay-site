@@ -1,4 +1,4 @@
-export type SiteView = 'landing' | 'simulador' | 'rastreio' | 'sourcing' | 'cursos';
+export type SiteView = 'landing' | 'simulador' | 'rastreio' | 'sourcing' | 'cursos' | 'erp';
 export type SiteNavigate = (view: SiteView, section?: string) => void;
 export type LegalTopic = 'termos' | 'privacidade' | 'compliance';
 
@@ -31,5 +31,5 @@ export function siteViewFromHash(hash: string): SiteView {
   const view = hash.replace(/^#/, '');
   if (view === 'calculator') return 'simulador';
   if (view === 'tracking') return 'rastreio';
-  return ['simulador', 'rastreio', 'sourcing', 'cursos'].includes(view) ? view as SiteView : 'landing';
+  return ['simulador', 'rastreio', 'sourcing', 'cursos', 'erp'].includes(view) ? view as SiteView : 'landing';
 }

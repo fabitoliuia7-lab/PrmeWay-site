@@ -16,6 +16,7 @@ interface CorporateHeaderProps {
   onLogout: () => void;
   onSupplierCheck: () => void;
   onOpenDebitNote?: () => void;
+  onOpenErp?: () => void;
 }
 
 const Arrow = () => (
@@ -43,6 +44,7 @@ export function CorporateHeader({
   onLogout,
   onSupplierCheck,
   onOpenDebitNote,
+  onOpenErp,
 }: CorporateHeaderProps) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
@@ -156,6 +158,17 @@ export function CorporateHeader({
             <Arrow />
           </button>
         )}
+        {isAdmin && onOpenErp && (
+          <button
+            type="button"
+            className={`pw-header-tool-link is-emphasis ${isToolActive('erp') ? 'is-current' : ''}`}
+            aria-current={isToolActive('erp') ? 'page' : undefined}
+            onClick={() => runAccountAction(onOpenErp)}
+          >
+            ERP / CRM
+            <Arrow />
+          </button>
+        )}
       </div>
     </div>
   );
@@ -188,6 +201,15 @@ export function CorporateHeader({
         <div className="pw-header-account-links">
           {isAdmin && onOpenDebitNote && (
             <button type="button" onClick={() => runAccountAction(onOpenDebitNote)}>Nota de Débito</button>
+          )}
+          {isAdmin && onOpenErp && (
+            <button
+              type="button"
+              onClick={() => runAccountAction(onOpenErp)}
+              className={activeView === 'erp' ? 'font-bold underline' : undefined}
+            >
+              ERP
+            </button>
           )}
           <button type="button" onClick={() => runAccountAction(onProfile)}>Perfil</button>
           <button type="button" onClick={() => runAccountAction(onHistory)}>

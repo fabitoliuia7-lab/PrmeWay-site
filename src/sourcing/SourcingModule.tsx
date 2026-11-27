@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
   Building2, 
   Package, 
@@ -9,11 +9,11 @@ import {
   Users, 
   Settings as SettingsIcon, 
   LayoutDashboard, 
-  Calculator, 
   ArrowLeft,
-  Globe2,
-  Sparkles,
-  ChevronRight
+  Cloud,
+  CloudOff,
+  RefreshCw,
+  Lock
 } from 'lucide-react';
 import { 
   Supplier, 
@@ -29,7 +29,24 @@ import {
 import { 
   loadSourcingData, 
   saveSourcingData, 
-  resetToDefaultSeed 
+  resetToDefaultSeed,
+  loadSourcingFromFirestore,
+  persistSupplierAndContacts,
+  removeSupplierFromFirestore,
+  persistProduct,
+  removeProductFromFirestore,
+  persistRelation,
+  removeRelationFromFirestore,
+  persistOrder,
+  removeOrderFromFirestore,
+  persistQuotation,
+  removeQuotationFromFirestore,
+  persistDocument,
+  removeDocumentFromFirestore,
+  persistClient,
+  removeClientFromFirestore,
+  persistSourcingSettings,
+  resetSourcingFirestoreToSeed,
 } from './storage';
 import { DashboardView } from './components/DashboardView';
 import { SuppliersView } from './components/SuppliersView';
@@ -56,11 +73,19 @@ export interface SourcingModuleProps {
     supplierName?: string;
     imageUrl?: string;
   }) => void;
+  isAdmin?: boolean;
+  isAuthReady?: boolean;
+  isAuthenticated?: boolean;
+  onOpenLogin?: () => void;
 }
 
 export const SourcingModule: React.FC<SourcingModuleProps> = ({
   onBackToCalculator,
-  onInjectIntoCalculator
+  onInjectIntoCalculator,
+  isAdmin = false,
+  isAuthReady = false,
+  isAuthenticated = false,
+  onOpenLogin
 }) => {
   // Navigation
   const [activeTab, setActiveTab] = useState<string>('dashboard');
@@ -68,11 +93,54 @@ export const SourcingModule: React.FC<SourcingModuleProps> = ({
 
   // Data State
   const [data, setData] = useState(() => loadSourcingData());
+  const dataRef = useRef(data);
+  dataRef.current = data;
 
-  // Save to persistence whenever data changes
+  const [cloudStatus, setCloudStatus] = useState<'idle' | 'loading' | 'saving' | 'synced' | 'error'>('idle');
+  const [cloudError, setCloudError] = useState<string | null>(null);
+
+  // Keep local offline cache mirrored whenever state changes
   useEffect(() => {
     saveSourcingData(data);
   }, [data]);
+
+  const syncFromCloud = useCallback(async () => {
+    if (!isAuthReady || !isAdmin) return;
+    setCloudStatus('loading');
+    setCloudError(null);
+    try {
+      const { store } = await loadSourcingFromFirestore();
+      setData(store);
+      setCloudStatus('synced');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro ao sincronizar Sourcing com a nuvem.';
+      setCloudError(message);
+      setCloudStatus('error');
+    }
+  }, [isAuthReady, isAdmin]);
+
+  useEffect(() => {
+    if (isAuthReady && isAdmin) {
+      void syncFromCloud();
+    } else if (isAuthReady && !isAdmin) {
+      setCloudStatus('idle');
+      setCloudError(null);
+    }
+  }, [isAuthReady, isAdmin, syncFromCloud]);
+
+  const runCloudMutation = async (fn: () => Promise<void>) => {
+    if (!isAdmin) return;
+    setCloudStatus('saving');
+    setCloudError(null);
+    try {
+      await fn();
+      setCloudStatus('synced');
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Erro ao guardar alteração na nuvem.';
+      setCloudError(message);
+      setCloudStatus('error');
+    }
+  };
 
   // Commercial Proposal Modal State
   const [proposalModal, setProposalModal] = useState<{
@@ -87,16 +155,21 @@ export const SourcingModule: React.FC<SourcingModuleProps> = ({
 
   // --- Handlers: Suppliers ---
   const handleSaveSupplier = (supplier: Supplier, contacts: SupplierContact[]) => {
+    const previousContactsForSupplier = dataRef.current.contacts
+      .filter(c => c.supplierId === supplier.id)
+      .map(c => c.id);
+    const nextContactIds = new Set(contacts.map(c => c.id));
+    const removedContactIds = previousContactsForSupplier.filter(id => !nextContactIds.has(id));
+
     setData(prev => {
       const existsIndex = prev.suppliers.findIndex(s => s.id === supplier.id);
-      let newSuppliers = [...prev.suppliers];
+      const newSuppliers = [...prev.suppliers];
       if (existsIndex >= 0) {
         newSuppliers[existsIndex] = supplier;
       } else {
         newSuppliers.unshift(supplier);
       }
 
-      // Filter out contacts of this supplier and add new ones
       const otherContacts = prev.contacts.filter(c => c.supplierId !== supplier.id);
       const newContacts = [...otherContacts, ...contacts];
 
@@ -106,22 +179,29 @@ export const SourcingModule: React.FC<SourcingModuleProps> = ({
         contacts: newContacts
       };
     });
+
+    void runCloudMutation(() => persistSupplierAndContacts(supplier, contacts, removedContactIds));
   };
 
   const handleDeleteSupplier = (supplierId: string) => {
+    const contactIds = dataRef.current.contacts.filter(c => c.supplierId === supplierId).map(c => c.id);
+    const relationIds = dataRef.current.relations.filter(r => r.supplierId === supplierId).map(r => r.id);
+
     setData(prev => ({
       ...prev,
       suppliers: prev.suppliers.filter(s => s.id !== supplierId),
       contacts: prev.contacts.filter(c => c.supplierId !== supplierId),
       relations: prev.relations.filter(r => r.supplierId !== supplierId)
     }));
+
+    void runCloudMutation(() => removeSupplierFromFirestore(supplierId, contactIds, relationIds));
   };
 
   // --- Handlers: Products ---
   const handleSaveProduct = (product: ProductItem) => {
     setData(prev => {
       const existsIndex = prev.products.findIndex(p => p.id === product.id);
-      let newProducts = [...prev.products];
+      const newProducts = [...prev.products];
       if (existsIndex >= 0) {
         newProducts[existsIndex] = product;
       } else {
@@ -129,21 +209,27 @@ export const SourcingModule: React.FC<SourcingModuleProps> = ({
       }
       return { ...prev, products: newProducts };
     });
+
+    void runCloudMutation(() => persistProduct(product));
   };
 
   const handleDeleteProduct = (productId: string) => {
+    const relationIds = dataRef.current.relations.filter(r => r.productId === productId).map(r => r.id);
+
     setData(prev => ({
       ...prev,
       products: prev.products.filter(p => p.id !== productId),
       relations: prev.relations.filter(r => r.productId !== productId)
     }));
+
+    void runCloudMutation(() => removeProductFromFirestore(productId, relationIds));
   };
 
   // --- Handlers: Product-Supplier Relations ---
   const handleSaveRelation = (relation: ProductSupplierRelation) => {
     setData(prev => {
       const existsIndex = prev.relations.findIndex(r => r.id === relation.id);
-      let newRelations = [...prev.relations];
+      const newRelations = [...prev.relations];
       if (existsIndex >= 0) {
         newRelations[existsIndex] = relation;
       } else {
@@ -151,6 +237,8 @@ export const SourcingModule: React.FC<SourcingModuleProps> = ({
       }
       return { ...prev, relations: newRelations };
     });
+
+    void runCloudMutation(() => persistRelation(relation));
   };
 
   const handleDeleteRelation = (relationId: string) => {
@@ -158,13 +246,15 @@ export const SourcingModule: React.FC<SourcingModuleProps> = ({
       ...prev,
       relations: prev.relations.filter(r => r.id !== relationId)
     }));
+
+    void runCloudMutation(() => removeRelationFromFirestore(relationId));
   };
 
   // --- Handlers: Orders ---
   const handleSaveOrder = (order: SourcingOrder) => {
     setData(prev => {
       const existsIndex = prev.orders.findIndex(o => o.id === order.id);
-      let newOrders = [...prev.orders];
+      const newOrders = [...prev.orders];
       if (existsIndex >= 0) {
         newOrders[existsIndex] = order;
       } else {
@@ -172,6 +262,8 @@ export const SourcingModule: React.FC<SourcingModuleProps> = ({
       }
       return { ...prev, orders: newOrders };
     });
+
+    void runCloudMutation(() => persistOrder(order));
   };
 
   const handleDeleteOrder = (orderId: string) => {
@@ -179,13 +271,15 @@ export const SourcingModule: React.FC<SourcingModuleProps> = ({
       ...prev,
       orders: prev.orders.filter(o => o.id !== orderId)
     }));
+
+    void runCloudMutation(() => removeOrderFromFirestore(orderId));
   };
 
   // --- Handlers: Quotations ---
   const handleSaveQuote = (quote: Quotation) => {
     setData(prev => {
       const existsIndex = prev.quotes.findIndex(q => q.id === quote.id);
-      let newQuotes = [...prev.quotes];
+      const newQuotes = [...prev.quotes];
       if (existsIndex >= 0) {
         newQuotes[existsIndex] = quote;
       } else {
@@ -193,6 +287,8 @@ export const SourcingModule: React.FC<SourcingModuleProps> = ({
       }
       return { ...prev, quotes: newQuotes };
     });
+
+    void runCloudMutation(() => persistQuotation(quote));
   };
 
   const handleDeleteQuote = (quoteId: string) => {
@@ -200,20 +296,24 @@ export const SourcingModule: React.FC<SourcingModuleProps> = ({
       ...prev,
       quotes: prev.quotes.filter(q => q.id !== quoteId)
     }));
+
+    void runCloudMutation(() => removeQuotationFromFirestore(quoteId));
   };
 
   // --- Handlers: Documents ---
-  const handleSaveDocument = (doc: CatalogDocument) => {
+  const handleSaveDocument = (docItem: CatalogDocument) => {
     setData(prev => {
-      const existsIndex = prev.documents.findIndex(d => d.id === doc.id);
-      let newDocs = [...prev.documents];
+      const existsIndex = prev.documents.findIndex(d => d.id === docItem.id);
+      const newDocs = [...prev.documents];
       if (existsIndex >= 0) {
-        newDocs[existsIndex] = doc;
+        newDocs[existsIndex] = docItem;
       } else {
-        newDocs.unshift(doc);
+        newDocs.unshift(docItem);
       }
       return { ...prev, documents: newDocs };
     });
+
+    void runCloudMutation(() => persistDocument(docItem));
   };
 
   const handleDeleteDocument = (docId: string) => {
@@ -221,13 +321,15 @@ export const SourcingModule: React.FC<SourcingModuleProps> = ({
       ...prev,
       documents: prev.documents.filter(d => d.id !== docId)
     }));
+
+    void runCloudMutation(() => removeDocumentFromFirestore(docId));
   };
 
   // --- Handlers: Clients ---
   const handleSaveClient = (client: SourcingClient) => {
     setData(prev => {
       const existsIndex = prev.clients.findIndex(c => c.id === client.id);
-      let newClients = [...prev.clients];
+      const newClients = [...prev.clients];
       if (existsIndex >= 0) {
         newClients[existsIndex] = client;
       } else {
@@ -235,6 +337,8 @@ export const SourcingModule: React.FC<SourcingModuleProps> = ({
       }
       return { ...prev, clients: newClients };
     });
+
+    void runCloudMutation(() => persistClient(client));
   };
 
   const handleDeleteClient = (clientId: string) => {
@@ -242,21 +346,29 @@ export const SourcingModule: React.FC<SourcingModuleProps> = ({
       ...prev,
       clients: prev.clients.filter(c => c.id !== clientId)
     }));
+
+    void runCloudMutation(() => removeClientFromFirestore(clientId));
   };
 
   // --- Handlers: Settings & Reset ---
   const handleSaveSettings = (settings: SourcingSettings) => {
-    setData(prev => ({ ...prev, settings }));
+    setData(prev => ({ ...prev, settings, config: settings }));
+    void runCloudMutation(() => persistSourcingSettings(settings));
   };
 
   const handleResetSeedData = () => {
+    const previous = dataRef.current;
     const fresh = resetToDefaultSeed();
     setData(fresh);
+    if (isAdmin) {
+      void runCloudMutation(async () => {
+        await resetSourcingFirestoreToSeed(previous);
+      });
+    }
   };
 
   // --- Calculator State Injection Actions ---
   const handleSendProductToCalculator = (product: ProductItem, relation?: ProductSupplierRelation) => {
-    // Determine FOB price in USD
     let priceUSD = 10;
     let supplierName: string | undefined = undefined;
 
@@ -324,7 +436,7 @@ export const SourcingModule: React.FC<SourcingModuleProps> = ({
     onInjectIntoCalculator({
       productName: product ? product.namePt : `Item Cotado (${quote.id})`,
       fobPriceUSD: priceUSD,
-      quantity: quote.quotedQuantity || 1,
+      quantity: quote.quotedQuantity || quote.quantity || 1,
       weightKg: product?.weightKg || 5,
       cbm: product?.dimensions?.cbmUnit || 0.1,
       hsCode: product?.hsCode,
@@ -352,7 +464,7 @@ export const SourcingModule: React.FC<SourcingModuleProps> = ({
       {/* Sourcing Top Navigation Bar */}
       <div className="bg-[#1A284F] text-white border-b border-slate-700/60 sticky top-0 z-30 shadow-md">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
+          <div className="flex items-center justify-between h-16 gap-3">
             {/* Left: Back to Calculator + Brand */}
             <div className="flex items-center gap-4">
               <button
@@ -376,6 +488,46 @@ export const SourcingModule: React.FC<SourcingModuleProps> = ({
                   </div>
                 </div>
               </div>
+            </div>
+
+            {/* Right: Cloud Persistence Indicator */}
+            <div className="flex items-center gap-2">
+              {isAdmin ? (
+                <button
+                  type="button"
+                  onClick={() => void syncFromCloud()}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-colors ${
+                    cloudStatus === 'error'
+                      ? 'bg-red-500/20 text-red-200 border border-red-400/40'
+                      : cloudStatus === 'loading' || cloudStatus === 'saving'
+                        ? 'bg-amber-500/20 text-amber-200 border border-amber-400/40'
+                        : 'bg-emerald-500/20 text-emerald-200 border border-emerald-400/30'
+                  }`}
+                  title="Sincronização em nuvem (Firestore)"
+                >
+                  {cloudStatus === 'loading' || cloudStatus === 'saving' ? (
+                    <RefreshCw size={12} className="animate-spin" />
+                  ) : cloudStatus === 'error' ? (
+                    <CloudOff size={12} />
+                  ) : (
+                    <Cloud size={12} />
+                  )}
+                  <span className="hidden sm:inline">
+                    {cloudStatus === 'loading'
+                      ? 'A carregar nuvem...'
+                      : cloudStatus === 'saving'
+                        ? 'A guardar na nuvem...'
+                        : cloudStatus === 'error'
+                          ? 'Erro na nuvem (Tentar novamente)'
+                          : 'Sincronizado na nuvem'}
+                  </span>
+                </button>
+              ) : (
+                <span className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-white/10 text-slate-200">
+                  <Lock size={12} />
+                  <span className="hidden sm:inline">Modo demonstração local</span>
+                </span>
+              )}
             </div>
           </div>
 
@@ -416,6 +568,42 @@ export const SourcingModule: React.FC<SourcingModuleProps> = ({
 
       {/* Main Sourcing Content Area */}
       <main id="conteudo-principal" tabIndex={-1} className="pw-sourcing__main max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-6">
+        {isAuthReady && !isAdmin && (
+          <div className="mb-5 p-4 rounded-xl border border-amber-200 bg-amber-50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs text-amber-950">
+            <div>
+              <strong className="font-bold">Aviso de persistência:</strong>{' '}
+              {isAuthenticated
+                ? 'Apenas contas de Administrador sincronizam os dados de Sourcing na base de dados em nuvem (Firestore). Alterações aqui ficam apenas temporárias neste navegador.'
+                : 'Está no modo de demonstração local. Inicie sessão como Administrador para gravar permanentemente fornecedores, produtos e pedidos na nuvem.'}
+            </div>
+            {!isAuthenticated && onOpenLogin && (
+              <button
+                type="button"
+                onClick={onOpenLogin}
+                className="shrink-0 px-3.5 py-2 rounded-lg bg-[#1A284F] text-white font-bold hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                Iniciar Sessão
+              </button>
+            )}
+          </div>
+        )}
+
+        {cloudStatus === 'error' && cloudError && (
+          <div className="mb-5 p-4 rounded-xl border border-red-200 bg-red-50 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-xs text-red-900">
+            <div>
+              <strong className="font-bold">Falha ao sincronizar com a base de dados:</strong>{' '}
+              <span>Verifique a sua ligação ou permissões de administrador antes de continuar.</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => void syncFromCloud()}
+              className="shrink-0 px-3.5 py-1.5 rounded-lg bg-red-700 text-white font-bold hover:bg-red-800 transition-colors cursor-pointer"
+            >
+              Tentar novamente
+            </button>
+          </div>
+        )}
+
         {activeTab === 'dashboard' && (
           <DashboardView
             suppliers={data.suppliers}
@@ -453,7 +641,7 @@ export const SourcingModule: React.FC<SourcingModuleProps> = ({
             suppliers={data.suppliers}
             relations={data.relations}
             categories={data.settings.productCategories}
-            defaultPorts={data.settings.defaultChinesePorts}
+            defaultPorts={data.settings.defaultChinesePorts || data.settings.defaultLoadingPorts}
             onSaveProduct={handleSaveProduct}
             onDeleteProduct={handleDeleteProduct}
             onSaveRelation={handleSaveRelation}
@@ -483,7 +671,7 @@ export const SourcingModule: React.FC<SourcingModuleProps> = ({
             orders={data.orders}
             suppliers={data.suppliers}
             products={data.products}
-            defaultPorts={data.settings.defaultChinesePorts}
+            defaultPorts={data.settings.defaultChinesePorts || data.settings.defaultLoadingPorts}
             destinations={data.settings.mozambiqueDestinations}
             onSaveQuote={handleSaveQuote}
             onDeleteQuote={handleDeleteQuote}

@@ -5,10 +5,10 @@
       "description": "Information about a registered user.",
       "type": "object",
       "properties": {
-        "uid": { "type": "string", "description": "The unique identifier for the user." },
-        "email": { "type": "string", "format": "email", "description": "The user's email address." },
-        "displayName": { "type": "string", "description": "The user's full name." },
-        "photoURL": { "type": "string", "format": "uri", "description": "The user's profile picture URL." },
+        "uid": { "type": "string", "maxLength": 128, "description": "The unique identifier for the user." },
+        "email": { "type": "string", "format": "email", "maxLength": 254, "description": "The user's email address." },
+        "displayName": { "type": "string", "maxLength": 120, "description": "The user's full name." },
+        "photoURL": { "type": "string", "format": "uri", "maxLength": 1000, "description": "The user's profile picture URL." },
         "role": { "type": "string", "enum": ["admin", "client"], "description": "The user's role in the system." },
         "createdAt": { "type": "string", "format": "date-time", "description": "When the profile was created." }
       },
@@ -19,9 +19,9 @@
       "description": "A saved calculation for an import operation.",
       "type": "object",
       "properties": {
-        "id": { "type": "string", "description": "Unique ID for the quote." },
-        "userId": { "type": "string", "description": "The ID of the user who saved the quote." },
-        "moeda": { "type": "string", "description": "Base currency." },
+        "id": { "type": "string", "maxLength": 128, "description": "Unique ID for the quote." },
+        "userId": { "type": "string", "maxLength": 128, "description": "The ID of the user who saved the quote." },
+        "moeda": { "type": "string", "maxLength": 10, "description": "Base currency." },
         "total": { "type": "number", "description": "Total investment value." },
         "tipoTransporte": { "type": "string", "enum": ["maritimo", "aereo"] },
         "produtos": { "type": "array", "description": "List of products in the quote." },
@@ -34,9 +34,9 @@
       "description": "Logistics tracking status.",
       "type": "object",
       "properties": {
-        "status": { "type": "string" },
-        "location": { "type": "string" },
-        "date": { "type": "string" },
+        "status": { "type": "string", "maxLength": 200 },
+        "location": { "type": "string", "maxLength": 200 },
+        "date": { "type": "string", "maxLength": 64 },
         "history": { "type": "array" }
       },
       "required": ["status"]
@@ -58,19 +58,333 @@
       "description": "Information about a debit note generated.",
       "type": "object",
       "properties": {
-        "userId": { "type": "string", "description": "The user who created the debit note." },
-        "clientInfo": { "type": "string" },
-        "operatorInfo": { "type": "string" },
-        "idCode": { "type": "string" },
-        "origin": { "type": "string" },
-        "shipMode": { "type": "string" },
-        "priceType": { "type": "string" },
-        "paymentType": { "type": "string" },
+        "userId": { "type": "string", "maxLength": 128, "description": "The user who created the debit note." },
+        "clientInfo": { "type": "string", "maxLength": 500 },
+        "operatorInfo": { "type": "string", "maxLength": 500 },
+        "idCode": { "type": "string", "maxLength": 128 },
+        "origin": { "type": "string", "maxLength": 100 },
+        "shipMode": { "type": "string", "maxLength": 50 },
+        "priceType": { "type": "string", "maxLength": 50 },
+        "paymentType": { "type": "string", "maxLength": 50 },
         "items": { "type": "array" },
         "totalMZN": { "type": "number" },
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["userId", "clientInfo", "totalMZN", "createdAt"]
+    },
+    "PautaItem": {
+      "title": "Customs Tariff Item",
+      "description": "Custom or synced Mozambique Harmonized System tariff item.",
+      "type": "object",
+      "properties": {
+        "codigo": { "type": "string", "pattern": "^[0-9]{4}\\.[0-9]{2}\\.[0-9]{2}$", "maxLength": 12 },
+        "shCapitulo": { "type": "string", "pattern": "^[0-9]{2}$", "maxLength": 2 },
+        "shPosicao": { "type": "string", "pattern": "^[0-9]{4}$", "maxLength": 4 },
+        "descricao": { "type": "string", "maxLength": 1000 },
+        "categoria": { "type": "string", "maxLength": 200 },
+        "tipoBem": { "type": "string", "enum": ["capital", "intermediario", "consumo", "veiculo", "isento", "especial"] },
+        "direitosPerc": { "type": "number" },
+        "icePerc": { "type": "number" },
+        "ivaPerc": { "type": "number" },
+        "unidadeFisica": { "type": "string", "maxLength": 20 },
+        "notas": { "type": "string", "maxLength": 2000 },
+        "palavrasChave": { "type": "array" }
+      },
+      "required": ["codigo", "shCapitulo", "shPosicao", "descricao", "categoria", "tipoBem", "direitosPerc", "icePerc", "ivaPerc"]
+    },
+    "SourcingSupplier": {
+      "title": "Sourcing Supplier",
+      "description": "Verified or evaluated supplier in the Sourcing CRM.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "companyName": { "type": "string", "maxLength": 300 },
+        "chineseName": { "type": "string", "maxLength": 300 },
+        "supplierType": { "type": "string", "enum": ["fabricante", "trading_company", "grossista", "agente"] },
+        "country": { "type": "string", "maxLength": 100 },
+        "province": { "type": "string", "maxLength": 120 },
+        "city": { "type": "string", "maxLength": 120 },
+        "website": { "type": "string", "maxLength": 500 },
+        "originPlatform": { "type": "string", "enum": ["1688", "Alibaba", "Made-in-China", "Canton Fair", "Contacto Direto", "Indicação", "Outro"] },
+        "status": { "type": "string", "enum": ["ativo", "em_avaliacao", "inativo", "blacklisted"] },
+        "trustLevel": { "type": "string", "enum": ["ouro", "verificado", "padrao", "alto_risco"] },
+        "internalRating": { "type": "number" },
+        "notes": { "type": "string", "maxLength": 4000 },
+        "createdAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "companyName", "supplierType", "country", "status", "trustLevel", "internalRating", "createdAt"]
+    },
+    "SourcingContact": {
+      "title": "Supplier Contact",
+      "description": "Direct commercial contact for a sourcing supplier.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "supplierId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 200 },
+        "role": { "type": "string", "maxLength": 150 },
+        "phone": { "type": "string", "maxLength": 64 },
+        "whatsapp": { "type": "string", "maxLength": 64 },
+        "wechat": { "type": "string", "maxLength": 100 },
+        "email": { "type": "string", "maxLength": 254 },
+        "language": { "type": "string", "maxLength": 100 },
+        "isPrimary": { "type": "boolean" }
+      },
+      "required": ["id", "supplierId", "name", "isPrimary"]
+    },
+    "SourcingProduct": {
+      "title": "Sourcing Product",
+      "description": "Product catalog record in the Sourcing module.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "namePt": { "type": "string", "maxLength": 300 },
+        "nameEn": { "type": "string", "maxLength": 300 },
+        "nameCn": { "type": "string", "maxLength": 300 },
+        "category": { "type": "string", "maxLength": 150 },
+        "description": { "type": "string", "maxLength": 4000 },
+        "material": { "type": "string", "maxLength": 500 },
+        "dimensions": { "type": "object" },
+        "weightKg": { "type": "number" },
+        "hsCode": { "type": "string", "maxLength": 32 },
+        "keywords": { "type": "array" },
+        "images": { "type": "array" },
+        "status": { "type": "string", "enum": ["ativo", "em_desenvolvimento", "descontinuado"] },
+        "createdAt": { "type": "string", "maxLength": 64 },
+        "indicativePrice": { "type": "number" },
+        "currency": { "type": "string", "enum": ["USD", "CNY", "MZN"] },
+        "priceUnit": { "type": "string", "enum": ["unidade", "metro", "kg", "caixa", "set", "par"] },
+        "moq": { "type": "number" },
+        "defaultSupplierId": { "type": "string", "maxLength": 128 }
+      },
+      "required": ["id", "namePt", "category", "status", "createdAt"]
+    },
+    "SourcingProductSupplier": {
+      "title": "Product Supplier Relation",
+      "description": "Pricing and lead-time terms linking a product to a supplier.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "productId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "supplierId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "supplierRef": { "type": "string", "maxLength": 150 },
+        "indicativePrice": { "type": "number" },
+        "currency": { "type": "string", "enum": ["USD", "CNY", "MZN"] },
+        "priceUnit": { "type": "string", "enum": ["unidade", "metro", "kg", "caixa", "set", "par"] },
+        "moq": { "type": "number" },
+        "monthlyCapacity": { "type": "string", "maxLength": 200 },
+        "leadTimeDays": { "type": "number" },
+        "incoterm": { "type": "string", "enum": ["EXW", "FOB", "CIF", "DDP"] },
+        "loadingPort": { "type": "string", "maxLength": 150 },
+        "paymentTerms": { "type": "string", "maxLength": 500 },
+        "contractUrl": { "type": "string", "maxLength": 1000 },
+        "customizationAvailable": { "type": "boolean" },
+        "sampleAvailable": { "type": "boolean" },
+        "sampleCost": { "type": "number" },
+        "priceDate": { "type": "string", "maxLength": 64 },
+        "infoSource": { "type": "string", "maxLength": 300 },
+        "notes": { "type": "string", "maxLength": 4000 }
+      },
+      "required": ["id", "productId", "supplierId", "indicativePrice", "currency", "incoterm"]
+    },
+    "SourcingClient": {
+      "title": "Sourcing Client",
+      "description": "Importer client record for sourcing orders and proposals.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 200 },
+        "company": { "type": "string", "maxLength": 300 },
+        "nuit": { "type": "string", "maxLength": 64 },
+        "phone": { "type": "string", "maxLength": 64 },
+        "email": { "type": "string", "maxLength": 254 },
+        "city": { "type": "string", "maxLength": 120 },
+        "address": { "type": "string", "maxLength": 400 },
+        "notes": { "type": "string", "maxLength": 4000 },
+        "createdAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "name", "company", "createdAt"]
+    },
+    "SourcingOrder": {
+      "title": "Sourcing Order",
+      "description": "Client procurement request tracked in the Sourcing module.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "clientId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "productId": { "type": "string", "maxLength": 128 },
+        "requestedProduct": { "type": "string", "maxLength": 400 },
+        "description": { "type": "string", "maxLength": 4000 },
+        "quantity": { "type": "number" },
+        "budget": { "type": "number" },
+        "currency": { "type": "string", "enum": ["USD", "CNY", "MZN"] },
+        "mozambiqueDestination": { "type": "string", "maxLength": 200 },
+        "deadline": { "type": "string", "maxLength": 64 },
+        "customization": { "type": "string", "maxLength": 1000 },
+        "status": { "type": "string", "enum": ["aberto", "em_pesquisa", "cotacoes_recebidas", "proposta_enviada", "aprovado", "concluido", "cancelado"] },
+        "priority": { "type": "string", "enum": ["baixa", "media", "alta", "urgente"] },
+        "assignedTo": { "type": "string", "maxLength": 200 },
+        "createdAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "clientId", "requestedProduct", "quantity", "status", "priority", "createdAt"]
+    },
+    "SourcingQuotation": {
+      "title": "Sourcing Quotation",
+      "description": "Supplier quotation linked to a sourcing order.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "orderId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "supplierId": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "productId": { "type": "string", "maxLength": 128 },
+        "requestDate": { "type": "string", "maxLength": 64 },
+        "responseDate": { "type": "string", "maxLength": 64 },
+        "quotationDate": { "type": "string", "maxLength": 64 },
+        "validUntil": { "type": "string", "maxLength": 64 },
+        "validityDate": { "type": "string", "maxLength": 64 },
+        "unitPrice": { "type": "number" },
+        "quantity": { "type": "number" },
+        "quotedQuantity": { "type": "number" },
+        "currency": { "type": "string", "enum": ["USD", "CNY", "MZN"] },
+        "incoterm": { "type": "string", "enum": ["EXW", "FOB", "CIF", "DDP"] },
+        "loadingPort": { "type": "string", "maxLength": 150 },
+        "destinationPort": { "type": "string", "maxLength": 150 },
+        "estimatedFreight": { "type": "number" },
+        "estimatedFreightUSD": { "type": "number" },
+        "estimatedInsurance": { "type": "number" },
+        "estimatedInsuranceUSD": { "type": "number" },
+        "productionLeadTimeDays": { "type": "number" },
+        "leadTimeDays": { "type": "number" },
+        "estimatedDeliveryDays": { "type": "number" },
+        "paymentTerms": { "type": "string", "maxLength": 500 },
+        "internalRating": { "type": "number" },
+        "quoteRating": { "type": "number" },
+        "status": { "type": "string", "enum": ["recebida", "em_analise", "selecionada", "aprovada", "rejeitada"] },
+        "attachmentUrl": { "type": "string", "maxLength": 1000 },
+        "totalMerchandise": { "type": "number" },
+        "notes": { "type": "string", "maxLength": 4000 },
+        "createdAt": { "type": "string", "maxLength": 64 }
+      },
+      "required": ["id", "orderId", "supplierId", "unitPrice", "currency", "incoterm", "status", "createdAt"]
+    },
+    "SourcingDocument": {
+      "title": "Sourcing Document",
+      "description": "Catalog, technical spec sheet, license, or proforma reference.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "pattern": "^[a-zA-Z0-9_\\-]+$", "maxLength": 128 },
+        "entityType": { "type": "string", "enum": ["fornecedor", "produto", "pedido", "cotacao"] },
+        "entityId": { "type": "string", "maxLength": 128 },
+        "supplierId": { "type": "string", "maxLength": 128 },
+        "productId": { "type": "string", "maxLength": 128 },
+        "title": { "type": "string", "maxLength": 300 },
+        "docType": { "type": "string", "enum": ["catalogo_pdf", "ficha_tecnica", "licenca_comercial", "relatorio_inspecao", "fatura_proforma", "foto_produto", "outro", "catalogo", "licenca", "inspecao", "proforma"] },
+        "documentType": { "type": "string", "enum": ["catalogo_pdf", "ficha_tecnica", "licenca_comercial", "relatorio_inspecao", "fatura_proforma", "foto_produto", "outro", "catalogo", "licenca", "inspecao", "proforma"] },
+        "fileUrl": { "type": "string", "maxLength": 2000 },
+        "fileSize": { "type": "string", "maxLength": 64 },
+        "description": { "type": "string", "maxLength": 2000 },
+        "uploadedAt": { "type": "string", "maxLength": 64 },
+        "notes": { "type": "string", "maxLength": 2000 }
+      },
+      "required": ["id", "title", "fileUrl", "uploadedAt"]
+    },
+    "SourcingSettings": {
+      "title": "Sourcing Settings",
+      "description": "Exchange rates, default ports, and product categories for Sourcing.",
+      "type": "object",
+      "properties": {
+        "exchangeRates": { "type": "object" },
+        "defaultLoadingPorts": { "type": "array" },
+        "defaultChinesePorts": { "type": "array" },
+        "mozambiqueDestinations": { "type": "array" },
+        "productCategories": { "type": "array" }
+      },
+      "required": ["exchangeRates", "defaultLoadingPorts", "mozambiqueDestinations", "productCategories"]
+    },
+    "ErpClient": {
+      "title": "ERP Client",
+      "description": "CRM client record in PrimeWay ERP.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "maxLength": 200 },
+        "email": { "type": "string", "maxLength": 254 },
+        "phone": { "type": "string", "maxLength": 64 },
+        "company": { "type": "string", "maxLength": 300 },
+        "sector": { "type": "string", "maxLength": 150 },
+        "status": { "type": "string", "enum": ["Novo", "Ativo", "Inativo", "Negociação", "Ganho", "Perdido"] },
+        "ownerId": { "type": "string", "maxLength": 128 },
+        "userEmail": { "type": "string", "maxLength": 254 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["name", "status", "updatedAt"]
+    },
+    "ErpInteraction": {
+      "title": "ERP Client Interaction",
+      "description": "Logged CRM contact/follow-up note under a client.",
+      "type": "object",
+      "properties": {
+        "clientId": { "type": "string", "maxLength": 128 },
+        "type": { "type": "string", "maxLength": 64 },
+        "notes": { "type": "string", "maxLength": 4000 },
+        "date": { "type": "string", "maxLength": 64 },
+        "userId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["clientId", "type", "notes", "date", "createdAt"]
+    },
+    "ErpOpportunity": {
+      "title": "ERP Opportunity",
+      "description": "Sales funnel opportunity with itemized MZN budget.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "maxLength": 300 },
+        "clientId": { "type": "string", "maxLength": 128 },
+        "status": { "type": "string", "enum": ["Prospecção", "Proposta", "Negociação", "Ganho", "Perdido"] },
+        "deadline": { "type": "string", "maxLength": 64 },
+        "items": { "type": "array" },
+        "value": { "type": "number" },
+        "ownerId": { "type": "string", "maxLength": 128 },
+        "userEmail": { "type": "string", "maxLength": 254 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "clientId", "status", "updatedAt"]
+    },
+    "ErpSale": {
+      "title": "ERP Sale / Import Operation",
+      "description": "Import or logistics sale operation tracked in ERP.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "maxLength": 300 },
+        "clientId": { "type": "string", "maxLength": 128 },
+        "type": { "type": "string", "maxLength": 150 },
+        "status": { "type": "string", "enum": ["Pending", "Negotiating", "Purchased", "In Transit", "Customs", "Delivered", "Cancelled"] },
+        "amount": { "type": "number" },
+        "notes": { "type": "string", "maxLength": 4000 },
+        "ownerId": { "type": "string", "maxLength": 128 },
+        "userEmail": { "type": "string", "maxLength": 254 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "clientId", "type", "status", "amount", "updatedAt"]
+    },
+    "ErpTask": {
+      "title": "ERP Agenda Task",
+      "description": "Scheduled follow-up or commercial team task.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "maxLength": 300 },
+        "description": { "type": "string", "maxLength": 2000 },
+        "priority": { "type": "string", "enum": ["Baixa", "Média", "Alta"] },
+        "date": { "type": "string", "format": "date-time" },
+        "status": { "type": "string", "enum": ["Pendente", "Concluída", "Cancelada"] },
+        "userId": { "type": "string", "maxLength": 128 },
+        "userEmail": { "type": "string", "maxLength": 254 },
+        "completedBy": { "type": "string", "maxLength": 254 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "date", "status", "priority"]
     }
   },
   "firestore": {
@@ -93,6 +407,66 @@
     "/debitNotes/{debitId}": {
       "schema": "DebitNote",
       "description": "Debit notes history for clients."
+    },
+    "/pauta_itens/{itemId}": {
+      "schema": "PautaItem",
+      "description": "Custom or synced tariff items."
+    },
+    "/sourcing_suppliers/{supplierId}": {
+      "schema": "SourcingSupplier",
+      "description": "Suppliers registered in Sourcing CRM."
+    },
+    "/sourcing_contacts/{contactId}": {
+      "schema": "SourcingContact",
+      "description": "Supplier commercial contacts."
+    },
+    "/sourcing_products/{productId}": {
+      "schema": "SourcingProduct",
+      "description": "Sourcing product catalog."
+    },
+    "/sourcing_product_suppliers/{relationId}": {
+      "schema": "SourcingProductSupplier",
+      "description": "Product-to-supplier pricing and terms links."
+    },
+    "/sourcing_clients/{clientId}": {
+      "schema": "SourcingClient",
+      "description": "Sourcing client directory."
+    },
+    "/sourcing_orders/{orderId}": {
+      "schema": "SourcingOrder",
+      "description": "Client sourcing orders."
+    },
+    "/sourcing_quotations/{quotationId}": {
+      "schema": "SourcingQuotation",
+      "description": "Supplier quotations for sourcing orders."
+    },
+    "/sourcing_documents/{documentId}": {
+      "schema": "SourcingDocument",
+      "description": "Supplier and product reference documents."
+    },
+    "/sourcing_settings/{settingId}": {
+      "schema": "SourcingSettings",
+      "description": "Global Sourcing module settings."
+    },
+    "/clients/{clientId}": {
+      "schema": "ErpClient",
+      "description": "PrimeWay ERP CRM clients."
+    },
+    "/clients/{clientId}/interactions/{interactionId}": {
+      "schema": "ErpInteraction",
+      "description": "Client CRM interaction history."
+    },
+    "/opportunities/{opportunityId}": {
+      "schema": "ErpOpportunity",
+      "description": "ERP sales funnel opportunities and budgets."
+    },
+    "/sales/{saleId}": {
+      "schema": "ErpSale",
+      "description": "ERP import and logistics operations."
+    },
+    "/tasks/{taskId}": {
+      "schema": "ErpTask",
+      "description": "ERP team follow-up tasks and agenda."
     }
   }
 }
