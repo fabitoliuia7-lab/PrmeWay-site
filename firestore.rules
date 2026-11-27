@@ -410,7 +410,7 @@ service cloud.firestore {
              (!data.keys().hasAny(['phone']) || (data.phone is string && data.phone.size() <= 64)) &&
              (!data.keys().hasAny(['company']) || (data.company is string && data.company.size() <= 300)) &&
              (!data.keys().hasAny(['sector']) || (data.sector is string && data.sector.size() <= 150)) &&
-             data.status in ['Novo', 'Ativo', 'Inativo', 'Negociação', 'Ganho', 'Perdido'] &&
+             data.status in ['Novo', 'Em Contato', 'Qualificado', 'Ativo', 'Inativo', 'Negociação', 'Ganho', 'Perdido'] &&
              data.updatedAt is timestamp &&
              (!data.keys().hasAny(['createdAt']) || data.createdAt is timestamp) &&
              (!data.keys().hasAny(['ownerId']) || (data.ownerId is string && data.ownerId.size() <= 128)) &&

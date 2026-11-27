@@ -47,7 +47,7 @@ export default function Reports() {
     value: oppsByStatusCount[key],
   }));
 
-  const COLORS = ['#818cf8', '#38bdf8', '#fbbf24', '#34d399', '#fb7185'];
+  const COLORS = ['#16263c', '#3e83b8', '#b94f22', '#10b981', '#d97706'];
 
   const oppsByMonth = opportunities.reduce((acc, curr) => {
     if (curr.status === 'Ganho' && curr.createdAt?.toDate) {
@@ -70,7 +70,10 @@ export default function Reports() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-slate-900">Relatórios de Vendas</h1>
+        <div>
+          <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#3e83b8] block mb-1">Indicadores</span>
+          <h1 className="font-heading text-2xl font-bold text-[#16263c]">Relatórios de Vendas</h1>
+        </div>
       </div>
 
       {errorMsg && (
@@ -80,8 +83,8 @@ export default function Reports() {
       )}
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-          <h2 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-6">Pipeline de Oportunidades</h2>
+        <div className="bg-white p-6 rounded-lg border border-[#dfe3e6] shadow-sm">
+          <h2 className="font-heading text-xs font-bold text-[#16263c] uppercase tracking-widest mb-6">Pipeline de Oportunidades</h2>
           <div className="h-[300px]">
             {oppsStatusData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
@@ -109,8 +112,8 @@ export default function Reports() {
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-          <h2 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-6">Faturamento de Vendas (Ganhos) por Mês</h2>
+        <div className="bg-white p-6 rounded-lg border border-[#dfe3e6] shadow-sm">
+          <h2 className="font-heading text-xs font-bold text-[#16263c] uppercase tracking-widest mb-6">Faturamento de Vendas (Ganhos) por Mês</h2>
           <div className="h-[300px]">
             {wonOppsTrend.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
@@ -119,7 +122,7 @@ export default function Reports() {
                   <XAxis dataKey="name" tick={{ fontSize: 12 }} tickLine={false} axisLine={false} />
                   <YAxis tick={{ fontSize: 12 }} tickLine={false} axisLine={false} tickFormatter={val => `MZN ${Number(val) / 1000}k`} />
                   <Tooltip cursor={{ fill: '#f8fafc' }} formatter={(val) => `MZN ${Number(val).toLocaleString()}`} />
-                  <Bar dataKey="Total" fill="#4f46e5" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="Total" fill="#b94f22" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             ) : (

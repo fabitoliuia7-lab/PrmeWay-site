@@ -200,7 +200,7 @@ export default function OpportunityDetail({ id }: OpportunityDetailProps) {
         )}
       </div>
 
-      <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-8">
+      <form onSubmit={handleSubmit} className="bg-white rounded-lg border border-[#dfe3e6] shadow-sm p-6 space-y-8">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="col-span-2">
             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Título da Oportunidade</label>
@@ -261,7 +261,7 @@ export default function OpportunityDetail({ id }: OpportunityDetailProps) {
             <button
               type="button"
               onClick={handleAddItem}
-              className="flex items-center gap-1 text-xs font-bold text-indigo-600 bg-indigo-50 px-3 py-1.5 rounded hover:bg-indigo-100 transition-colors cursor-pointer"
+              className="flex items-center gap-1 text-xs font-bold text-[#16263c] bg-[#f7f7f3] border border-[#dfe3e6] px-3 py-1.5 rounded-md hover:bg-slate-100 transition-colors cursor-pointer"
             >
               <Plus className="w-4 h-4" /> ADICIONAR ITEM
             </button>
@@ -339,7 +339,7 @@ export default function OpportunityDetail({ id }: OpportunityDetailProps) {
                       <td colSpan={4} className="px-4 py-3 text-right text-xs font-bold text-slate-500 uppercase tracking-widest bg-slate-50">
                         Total do Orçamento
                       </td>
-                      <td className="px-4 py-3 text-right bg-indigo-600 text-white font-bold text-lg rounded-br-lg">
+                      <td className="px-4 py-3 text-right bg-[#16263c] text-white font-bold text-lg rounded-br-lg">
                         MZN {totalValue.toLocaleString()}
                       </td>
                     </tr>
@@ -354,7 +354,7 @@ export default function OpportunityDetail({ id }: OpportunityDetailProps) {
           <button
             type="submit"
             disabled={saving}
-            className="flex items-center gap-2 bg-indigo-600 text-white px-8 py-3 rounded-lg font-bold text-sm hover:bg-indigo-700 transition-colors disabled:opacity-50 cursor-pointer"
+            className="flex items-center gap-2 bg-[#16263c] text-white px-8 py-3 rounded-md font-semibold text-sm hover:bg-[#233856] transition-colors disabled:opacity-50 cursor-pointer"
           >
             <Save className="w-4 h-4" />
             {saving ? 'SALVANDO...' : 'SALVAR OPORTUNIDADE'}

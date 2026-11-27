@@ -83,18 +83,21 @@ export default function SalesList() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-xl font-bold text-slate-900">Importações e Vendas</h1>
+        <div>
+          <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#3e83b8] block mb-1">Operações</span>
+          <h1 className="font-heading text-2xl font-bold text-[#16263c]">Importações e Vendas</h1>
+        </div>
         <button
           type="button"
           onClick={() => navigate('/sales/new')}
-          className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg font-bold text-sm hover:bg-indigo-700 transition-colors cursor-pointer"
+          className="flex items-center gap-2 bg-[#16263c] text-white px-4 py-2.5 rounded-md font-semibold text-xs uppercase tracking-wider hover:bg-[#233856] transition-colors cursor-pointer"
         >
           <Plus className="w-4 h-4" />
-          NOVA OPERAÇÃO
+          Nova Operação
         </button>
       </div>
 
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-lg border border-[#dfe3e6] shadow-sm overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
           <div className="flex items-center gap-3 w-full sm:w-1/2">
             <Search className="w-4 h-4 text-slate-400" />

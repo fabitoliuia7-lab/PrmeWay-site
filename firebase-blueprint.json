@@ -311,7 +311,7 @@
         "phone": { "type": "string", "maxLength": 64 },
         "company": { "type": "string", "maxLength": 300 },
         "sector": { "type": "string", "maxLength": 150 },
-        "status": { "type": "string", "enum": ["Novo", "Ativo", "Inativo", "Negociação", "Ganho", "Perdido"] },
+        "status": { "type": "string", "enum": ["Novo", "Em Contato", "Qualificado", "Ativo", "Inativo", "Negociação", "Ganho", "Perdido"] },
         "ownerId": { "type": "string", "maxLength": 128 },
         "userEmail": { "type": "string", "maxLength": 254 },
         "createdAt": { "type": "string", "format": "date-time" },

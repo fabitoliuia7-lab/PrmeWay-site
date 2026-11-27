@@ -75,14 +75,17 @@ export default function OpportunitiesList() {
   return (
     <div className="flex flex-col gap-6 min-h-[calc(100dvh-220px)]">
       <div className="flex flex-wrap items-center justify-between gap-3 shrink-0">
-        <h1 className="text-xl font-bold text-slate-900">Funil de Vendas (Oportunidades)</h1>
+        <div>
+          <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#3e83b8] block mb-1">Funil Comercial</span>
+          <h1 className="font-heading text-2xl font-bold text-[#16263c]">Oportunidades &amp; Orçamentos</h1>
+        </div>
         <button
           type="button"
           onClick={() => navigate('/opportunities/new')}
-          className="flex items-center gap-2 bg-indigo-600 text-white px-4 py-2 rounded-lg font-bold text-sm hover:bg-indigo-700 transition-colors cursor-pointer"
+          className="flex items-center gap-2 bg-[#16263c] text-white px-4 py-2.5 rounded-md font-semibold text-xs uppercase tracking-wider hover:bg-[#233856] transition-colors cursor-pointer"
         >
           <Plus className="w-4 h-4" />
-          NOVA OPORTUNIDADE
+          Nova Oportunidade
         </button>
       </div>
 
@@ -100,29 +103,29 @@ export default function OpportunitiesList() {
             const bucketOpps = opportunities.filter(o => o.status === status);
             const totalValue = bucketOpps.reduce((acc, curr) => acc + (Number(curr.value) || 0), 0);
             return (
-              <div key={status} className="flex flex-col bg-slate-100 rounded-xl min-w-[280px] max-w-[320px] shrink-0 snap-center border border-slate-200">
-                <div className={`p-4 border-t-4 rounded-t-xl ${getStatusColor(status)} flex items-center justify-between bg-white`}>
-                  <h3 className="font-bold text-slate-700 uppercase tracking-widest text-xs">{status}</h3>
-                  <span className="bg-slate-100 text-slate-600 px-2 py-0.5 rounded text-xs font-bold">{bucketOpps.length}</span>
+              <div key={status} className="flex flex-col bg-white/70 rounded-lg min-w-[280px] max-w-[320px] shrink-0 snap-center border border-[#dfe3e6]">
+                <div className={`p-4 border-t-4 rounded-t-lg ${getStatusColor(status)} flex items-center justify-between bg-white`}>
+                  <h3 className="font-heading font-bold text-[#16263c] uppercase tracking-wider text-xs">{status}</h3>
+                  <span className="bg-[#f7f7f3] text-[#16263c] px-2 py-0.5 rounded text-xs font-bold border border-[#dfe3e6]">{bucketOpps.length}</span>
                 </div>
 
-                <div className="px-4 py-2 bg-white border-b border-slate-100 flex items-center justify-between shrink-0">
+                <div className="px-4 py-2 bg-white border-b border-[#dfe3e6] flex items-center justify-between shrink-0">
                   <span className="text-[10px] uppercase font-bold text-slate-400">Tempo Real</span>
-                  <span className="text-xs font-bold text-slate-700">MZN {totalValue.toLocaleString()}</span>
+                  <span className="text-xs font-bold text-[#16263c]">MZN {totalValue.toLocaleString()}</span>
                 </div>
 
                 <div className="p-4 flex-1 overflow-y-auto space-y-3">
                   {bucketOpps.map(opp => (
                     <div
                       key={opp.id}
-                      className="bg-white p-4 rounded-lg border border-slate-200 shadow-sm hover:shadow-md transition-shadow cursor-pointer relative group"
+                      className="bg-white p-4 rounded-lg border border-[#dfe3e6] shadow-sm hover:border-[#16263c]/40 transition-colors cursor-pointer relative group"
                       onClick={() => navigate(`/opportunities/${opp.id}`)}
                     >
-                      <h4 className="font-bold text-slate-900 text-sm mb-1 pr-16">{opp.title}</h4>
+                      <h4 className="font-bold text-[#16263c] text-sm mb-1 pr-16">{opp.title}</h4>
                       <p className="text-xs text-slate-500 mb-3 truncate">{clients[opp.clientId]?.name || 'Cliente Desconhecido'}</p>
 
                       <div className="flex items-center justify-between text-xs">
-                        <span className="font-bold text-indigo-700">MZN {(Number(opp.value) || 0).toLocaleString()}</span>
+                        <span className="font-bold text-[#b94f22]">MZN {(Number(opp.value) || 0).toLocaleString()}</span>
                         {opp.deadline && (
                           <span className="text-slate-400 font-medium">Até {new Date(opp.deadline).toLocaleDateString('pt-PT')}</span>
                         )}

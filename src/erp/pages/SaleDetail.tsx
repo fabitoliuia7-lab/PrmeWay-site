@@ -162,7 +162,7 @@ export default function SaleDetail({ id }: SaleDetailProps) {
         )}
       </div>
 
-      <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-6">
+      <form onSubmit={handleSubmit} className="bg-white rounded-lg border border-[#dfe3e6] shadow-sm p-6 space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="col-span-2 md:col-span-1">
             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Título / Referência da Carga</label>
@@ -251,7 +251,7 @@ export default function SaleDetail({ id }: SaleDetailProps) {
           <button
             type="submit"
             disabled={saving}
-            className="flex items-center gap-2 bg-indigo-600 text-white px-6 py-2.5 rounded-lg font-bold text-sm hover:bg-indigo-700 transition-colors disabled:opacity-50 cursor-pointer"
+            className="flex items-center gap-2 bg-[#16263c] text-white px-6 py-2.5 rounded-md font-semibold text-sm hover:bg-[#233856] transition-colors disabled:opacity-50 cursor-pointer"
           >
             <Save className="w-4 h-4" />
             {saving ? 'SALVANDO...' : 'SALVAR OPERAÇÃO'}

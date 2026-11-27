@@ -6,17 +6,13 @@ import {
   PieChart,
   BarChart,
   Calendar,
-  ArrowLeft
+  ArrowLeft,
 } from 'lucide-react';
 import { collection, query, where, onSnapshot } from 'firebase/firestore';
 import { db } from '../firebase';
 import { ErpOperationType, logErpFirestoreError, useErp } from './ErpContext';
 
-interface ErpSidebarProps {
-  onClose?: () => void;
-}
-
-export default function ErpSidebar({ onClose }: ErpSidebarProps) {
+export default function ErpSidebar() {
   const { user, route, navigate, onExitErp } = useErp();
   const [pendingCount, setPendingCount] = useState(0);
 
@@ -48,7 +44,7 @@ export default function ErpSidebar({ onClose }: ErpSidebarProps) {
   const navItems = [
     { name: 'Dashboard', path: '/', icon: LayoutDashboard },
     { name: 'CRM (Clientes)', path: '/clients', icon: Users },
-    { name: 'Oportunidades (ERP)', path: '/opportunities', icon: BarChart },
+    { name: 'Oportunidades', path: '/opportunities', icon: BarChart },
     { name: 'Agenda & Follow-up', path: '/agenda', icon: Calendar, badge: pendingCount },
     { name: 'Importações', path: '/sales', icon: Package },
     { name: 'Relatórios', path: '/reports', icon: PieChart },
@@ -60,83 +56,90 @@ export default function ErpSidebar({ onClose }: ErpSidebarProps) {
   };
 
   return (
-    <aside className="w-64 bg-slate-900 text-slate-300 flex flex-col shrink-0 h-full min-h-[calc(100dvh-110px)]">
-      <div className="p-5 border-b border-slate-800">
-        <div className="flex items-center gap-3 text-white">
-          <div className="w-10 h-10 flex items-center justify-center bg-white rounded-lg p-1 shrink-0">
-            <img
-              src="/logo-primeway.png"
-              alt="Primeway Logo"
-              className="w-full h-full object-contain"
-            />
-          </div>
-          <div>
-            <span className="text-lg font-bold tracking-tight block leading-tight">Primeway</span>
-            <span className="text-[10px] uppercase tracking-widest text-indigo-400 font-bold">ERP &amp; CRM</span>
-          </div>
-        </div>
-      </div>
-
-      <nav className="flex-1 py-4 overflow-y-auto text-sm font-medium">
-        <div className="px-6 py-2 text-slate-500 uppercase text-[10px] tracking-widest font-bold flex justify-between">
-          <span>Menu</span>
-        </div>
-        {navItems.map((item) => {
-          const active = isRouteActive(item.path);
-          return (
+    <div className="bg-[#16263c] text-white border-b border-slate-700/60 shadow-sm">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        {/* Top Row: Back + PrimeWay Logo & Identity + User Chip */}
+        <div className="flex items-center justify-between h-16 gap-3">
+          <div className="flex items-center gap-3 sm:gap-4 min-w-0">
             <button
-              key={item.path}
               type="button"
-              onClick={() => {
-                navigate(item.path);
-                onClose?.();
-              }}
-              className={`w-full text-left flex items-center justify-between px-6 py-3 transition-colors cursor-pointer ${
-                active
-                  ? 'bg-indigo-600/10 text-indigo-400 border-r-2 border-indigo-500'
-                  : 'hover:bg-slate-800 hover:text-white'
-              }`}
+              onClick={onExitErp}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-semibold tracking-wide transition-colors cursor-pointer shrink-0"
             >
-              <div className="flex items-center gap-3">
-                <item.icon className="w-5 h-5" />
-                <span>{item.name}</span>
-              </div>
-              {!!item.badge && item.badge > 0 && (
-                <span className="bg-rose-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full flex items-center justify-center animate-pulse">
-                  {item.badge}
-                </span>
-              )}
+              <ArrowLeft className="w-3.5 h-3.5" />
+              <span>Site</span>
             </button>
-          );
-        })}
-      </nav>
 
-      <div className="p-4 border-t border-slate-800 space-y-3 shrink-0">
-        <div className="flex items-center gap-3 min-w-0 px-2">
-          <div className="w-8 h-8 rounded-full bg-slate-700 overflow-hidden flex items-center justify-center shrink-0">
-            {user?.photoURL ? (
-              <img src={user.photoURL} alt="Profile" className="w-full h-full object-cover" />
-            ) : (
-              <span className="text-white font-bold">{(user?.email?.[0] || 'A').toUpperCase()}</span>
-            )}
+            <div className="h-6 w-px bg-white/15 hidden sm:block shrink-0" />
+
+            <div className="flex items-center gap-3 min-w-0">
+              <img
+                src="/IMG-20260215-WA0003.jpg"
+                alt="PrimeWay Logo"
+                className="w-9 h-9 rounded-md object-contain bg-[#050505] border border-white/20 shrink-0"
+              />
+              <div className="min-w-0">
+                <div className="font-heading font-bold text-sm sm:text-base leading-tight tracking-tight truncate">
+                  PrimeWay ERP &amp; CRM
+                </div>
+                <div className="text-[10px] uppercase tracking-[0.14em] text-slate-300 font-medium truncate">
+                  Gestão Comercial &amp; Operações
+                </div>
+              </div>
+            </div>
           </div>
-          <div className="text-xs font-medium truncate">
-            <p className="text-white truncate">{user?.displayName || 'Admin'}</p>
-            <p className="text-slate-400 italic truncate">{user?.email || 'Gestão'}</p>
+
+          <div className="flex items-center gap-3 shrink-0">
+            <span className="hidden md:inline-flex items-center px-2.5 py-1 rounded-md bg-white/10 text-[11px] font-medium text-slate-200">
+              Moçambique • MZN
+            </span>
+            <div className="flex items-center gap-2 bg-white/10 px-2.5 py-1 rounded-md">
+              <div className="w-6 h-6 rounded bg-[#b94f22] text-white text-[11px] font-bold flex items-center justify-center shrink-0">
+                {(user?.displayName || user?.email || 'A').slice(0, 1).toUpperCase()}
+              </div>
+              <span className="hidden sm:inline text-xs font-medium text-slate-100 max-w-[160px] truncate">
+                {user?.displayName || user?.email || 'Admin'}
+              </span>
+            </div>
           </div>
         </div>
-        <button
-          type="button"
-          onClick={() => {
-            onClose?.();
-            onExitErp();
-          }}
-          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition-colors cursor-pointer"
+
+        {/* Sub-Navigation Horizontal Tabs matching Sourcing / Corporate */}
+        <nav
+          aria-label="Navegação ERP"
+          className="flex items-center gap-1.5 overflow-x-auto py-2.5 border-t border-white/10 text-xs font-medium"
         >
-          <ArrowLeft className="w-4 h-4" />
-          Voltar ao Site
-        </button>
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const active = isRouteActive(item.path);
+            return (
+              <button
+                key={item.path}
+                type="button"
+                aria-current={active ? 'page' : undefined}
+                onClick={() => navigate(item.path)}
+                className={`flex items-center gap-2 px-3.5 py-2 rounded-md whitespace-nowrap transition-colors cursor-pointer ${
+                  active
+                    ? 'bg-[#b94f22] text-white font-semibold shadow-sm'
+                    : 'text-slate-300 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                <Icon className={`w-4 h-4 ${active ? 'text-white' : 'text-slate-300'}`} />
+                <span>{item.name}</span>
+                {!!item.badge && item.badge > 0 && (
+                  <span
+                    className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full leading-none ${
+                      active ? 'bg-white text-[#b94f22]' : 'bg-[#b94f22] text-white'
+                    }`}
+                  >
+                    {item.badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </nav>
       </div>
-    </aside>
+    </div>
   );
 }

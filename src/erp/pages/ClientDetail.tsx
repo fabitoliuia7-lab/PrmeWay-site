@@ -22,6 +22,7 @@ export default function ClientDetail({ id }: ClientDetailProps) {
   });
   const [loading, setLoading] = useState(!isNew);
   const [saving, setSaving] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [interactions, setInteractions] = useState<any[]>([]);
   const [newInteraction, setNewInteraction] = useState({ type: 'Ligação', notes: '', date: '' });
@@ -124,7 +125,11 @@ export default function ClientDetail({ id }: ClientDetailProps) {
   };
 
   const handleDelete = async () => {
-    if (!window.confirm('Excluir este cliente?')) return;
+    if (!id || isNew) return;
+    if (!confirmDelete) {
+      setConfirmDelete(true);
+      return;
+    }
     try {
       await deleteDoc(doc(db, 'clients', id));
       navigate('/clients');
@@ -134,32 +139,48 @@ export default function ClientDetail({ id }: ClientDetailProps) {
     }
   };
 
-  if (loading) return <div className="p-8 text-slate-500">Carregando...</div>;
+  if (loading) return <div className="p-8 text-slate-500 text-sm">Carregando...</div>;
 
   return (
-    <div className="max-w-2xl mx-auto mt-6 w-full">
+    <div className="max-w-2xl mx-auto mt-2 w-full">
       <button
         type="button"
         onClick={() => navigate('/clients')}
-        className="flex items-center gap-2 text-slate-500 hover:text-slate-900 mb-6 transition-colors text-sm font-medium cursor-pointer"
+        className="flex items-center gap-2 text-slate-500 hover:text-[#16263c] mb-6 transition-colors text-sm font-medium cursor-pointer"
       >
         <ArrowLeft className="w-4 h-4" />
         VOLTAR
       </button>
 
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-slate-900">
+      <div className="flex items-center justify-between mb-6 gap-4">
+        <h1 className="font-heading text-2xl font-bold text-[#16263c]">
           {isNew ? 'Novo Cliente' : 'Editar Cliente'}
         </h1>
         {!isNew && (
-          <button
-            type="button"
-            onClick={handleDelete}
-            className="p-2 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors border border-transparent hover:border-rose-100 cursor-pointer"
-            title="Excluir Cliente"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            {confirmDelete && (
+              <button
+                type="button"
+                onClick={() => setConfirmDelete(false)}
+                className="px-3 py-1.5 text-xs font-semibold text-slate-600 bg-slate-100 rounded-md hover:bg-slate-200 cursor-pointer"
+              >
+                Cancelar
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleDelete}
+              className={`px-3 py-2 rounded-md transition-colors border flex items-center gap-1.5 text-xs font-bold cursor-pointer ${
+                confirmDelete
+                  ? 'bg-rose-600 text-white border-rose-600 hover:bg-rose-700'
+                  : 'text-rose-600 hover:bg-rose-50 border-transparent hover:border-rose-100'
+              }`}
+              title="Excluir Cliente"
+            >
+              <Trash2 className="w-4 h-4" />
+              {confirmDelete ? 'Confirmar Exclusão' : ''}
+            </button>
+          </div>
         )}
       </div>
 
@@ -169,7 +190,7 @@ export default function ClientDetail({ id }: ClientDetailProps) {
         </div>
       )}
 
-      <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-6">
+      <form onSubmit={handleSubmit} className="bg-white rounded-lg border border-[#dfe3e6] shadow-sm p-6 space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="col-span-2 md:col-span-1">
             <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Nome Completo</label>
@@ -249,7 +270,7 @@ export default function ClientDetail({ id }: ClientDetailProps) {
           <button
             type="submit"
             disabled={saving}
-            className="flex items-center gap-2 bg-indigo-600 text-white px-6 py-2.5 rounded-lg font-bold text-sm hover:bg-indigo-700 transition-colors disabled:opacity-50 cursor-pointer"
+            className="flex items-center gap-2 bg-[#16263c] text-white px-6 py-2.5 rounded-md font-semibold text-sm hover:bg-[#233856] transition-colors disabled:opacity-50 cursor-pointer"
           >
             <Save className="w-4 h-4" />
             {saving ? 'SALVANDO...' : 'SALVAR CLIENTE'}
@@ -318,7 +339,7 @@ export default function ClientDetail({ id }: ClientDetailProps) {
                                interaction.type === 'WhatsApp' ? MessageCircle : Calendar;
                   return (
                     <div key={interaction.id} className="flex gap-4">
-                      <div className="mt-1 w-8 h-8 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+                      <div className="mt-1 w-8 h-8 rounded-full bg-[#3e83b8]/10 text-[#16263c] flex items-center justify-center shrink-0">
                         <Icon className="w-4 h-4" />
                       </div>
                       <div className="flex-1 bg-white border border-slate-100 rounded-lg p-4 shadow-sm">

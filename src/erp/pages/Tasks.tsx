@@ -100,13 +100,14 @@ export default function Tasks() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 leading-tight">Agenda &amp; Follow-ups</h1>
-          <p className="text-sm text-slate-500">Gerencie as tarefas da equipe de vendas</p>
+          <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#3e83b8] block mb-1">Acompanhamento</span>
+          <h1 className="font-heading text-2xl font-bold text-[#16263c] leading-tight">Agenda &amp; Follow-ups</h1>
+          <p className="text-sm text-slate-500">Gerencie as tarefas da equipa comercial</p>
         </div>
         <button
           type="button"
           onClick={() => setShowAddModal(true)}
-          className="bg-indigo-600 text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 hover:bg-indigo-700 transition-colors shadow-sm cursor-pointer"
+          className="bg-[#16263c] text-white px-4 py-2.5 rounded-md text-xs uppercase tracking-wider font-semibold flex items-center gap-2 hover:bg-[#233856] transition-colors shadow-sm cursor-pointer"
         >
           <Plus className="w-4 h-4" />
           Nova Tarefa
@@ -245,8 +246,8 @@ export default function Tasks() {
               className="bg-white rounded-2xl w-full max-w-md shadow-xl overflow-hidden"
             >
               <div className="p-6 border-b border-slate-100 flex items-center justify-between">
-                <h2 className="text-lg font-bold text-slate-900">Agendar Novo Registro</h2>
-                <div className="w-8 h-8 flex items-center justify-center bg-indigo-50 text-indigo-600 rounded-lg">
+                <h2 className="font-heading text-lg font-bold text-[#16263c]">Agendar Novo Registro</h2>
+                <div className="w-8 h-8 flex items-center justify-center bg-[#f7f7f3] text-[#16263c] rounded-lg border border-[#dfe3e6]">
                   <CalendarIcon className="w-4 h-4" />
                 </div>
               </div>
@@ -308,7 +309,7 @@ export default function Tasks() {
                   </button>
                   <button
                     type="submit"
-                    className="flex-1 px-4 py-2.5 bg-indigo-600 text-white rounded-lg text-sm font-bold hover:bg-indigo-700 transition-colors shadow-sm cursor-pointer"
+                    className="flex-1 px-4 py-2.5 bg-[#16263c] text-white rounded-md text-sm font-semibold hover:bg-[#233856] transition-colors shadow-sm cursor-pointer"
                   >
                     Salvar na Agenda
                   </button>

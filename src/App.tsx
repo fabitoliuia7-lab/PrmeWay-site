@@ -4846,13 +4846,13 @@ function AppContent() {
                         alt="PrimeWay Logo" 
                         className="w-28 h-auto object-contain shrink-0"
                       />
-                      <div className="text-center">
-                        <h4 className="text-base sm:text-xl font-black text-[#1A284F] tracking-wider">
+                      <div className="flex-1 min-w-0 px-2 text-center flex flex-col items-center justify-center gap-1.5">
+                        <h4 className="text-base sm:text-xl font-black text-[#1A284F] tracking-wide leading-snug m-0">
                           {debitNoteForm.shipMode === 'AIR' ? '✈️ AIR CARGO' : '🚢 SEA CARGO'} DE {debitNoteForm.origin.toUpperCase()} PARA MAPUTO
                         </h4>
-                        <p className="text-xs sm:text-sm font-bold text-[#2D4C8C] italic">Excelência em cada importação</p>
+                        <p className="text-xs sm:text-sm font-bold text-[#2D4C8C] italic leading-snug m-0">Excelência em cada importação.</p>
                       </div>
-                      <img src="https://flagcdn.com/w160/mz.png" alt="Mozambique Flag" className="w-14 object-cover shadow-sm border border-slate-200 hidden sm:block" />
+                      <img src="https://flagcdn.com/w160/mz.png" alt="Mozambique Flag" className="w-14 object-cover shadow-sm border border-slate-200 hidden sm:block shrink-0" />
                     </div>
 
                     <div className="text-center py-2.5 bg-[#2D4C8C] text-white">
@@ -6029,30 +6029,38 @@ function AppContent() {
       </div>
 
       {/* --- Debit Note Print Area --- */}
-      <div id="debit-note-print-area" className="hidden bg-[#ffffff] font-sans text-[#1A284F] fixed top-0 left-0 w-[1123px] z-[-50]">
+      <div id="debit-note-print-area" className="hidden bg-[#ffffff] font-sans text-[#1A284F] fixed top-0 left-0 w-[1123px] z-[-50]" style={{ lineHeight: 1.4 }}>
         <div className="border-[8px] border-[#2D4C8C] max-w-[1123px] mx-auto bg-white rounded-xl overflow-hidden m-4">
           {/* Header Banner */}
-          <div className="bg-[#f8fafc] border-b-[4px] border-[#2D4C8C] flex items-center justify-between px-12 py-8">
-            <div className="flex items-center gap-6">
+          <div className="bg-[#f8fafc] border-b-[4px] border-[#2D4C8C] flex items-center justify-between gap-6 px-10 py-7">
+            <div className="flex items-center shrink-0">
                <img 
                   src={logoBase64} 
                   alt="PrimeWay Logo" 
-                  className="w-40 h-auto object-contain shrink-0"
+                  className="w-36 h-auto object-contain shrink-0"
                 />
             </div>
-            <div className="text-center">
-              <h1 className="text-3xl font-black text-[#1A284F] tracking-wider mb-2">
+            <div className="flex-1 min-w-0 px-4 text-center flex flex-col items-center justify-center gap-3">
+              <h1
+                className="text-2xl font-black text-[#1A284F] tracking-wide m-0"
+                style={{ lineHeight: 1.35, margin: 0 }}
+              >
                 {debitNoteForm.shipMode === 'AIR' ? '✈️ AIR CARGO' : '🚢 SEA CARGO'} DE {debitNoteForm.origin.toUpperCase()} PARA MAPUTO
               </h1>
-              <h2 className="text-xl font-bold text-[#2D4C8C] italic">Excelência em cada importação.</h2>
+              <h2
+                className="text-lg font-bold text-[#2D4C8C] italic m-0"
+                style={{ lineHeight: 1.35, margin: 0 }}
+              >
+                Excelência em cada importação.
+              </h2>
             </div>
-            <div className="flex items-center">
+            <div className="flex items-center shrink-0">
                <img src="https://flagcdn.com/w160/mz.png" alt="Mozambique Flag" className="w-[80px] object-cover shadow-sm border border-slate-200" crossOrigin="anonymous"/>
             </div>
           </div>
           
           <div className="text-center py-4 bg-[#2D4C8C] text-white">
-            <h1 className="text-3xl font-black tracking-widest">
+            <h1 className="text-2xl font-black tracking-widest m-0" style={{ lineHeight: 1.3, margin: 0 }}>
               {debitNoteForm.paymentType === 'SEPARATE_PAYMENT' ? 'NOTA DE DÉBITO (PAGAMENTO SEPARADO)' :
                debitNoteForm.paymentType === 'ADVANCE' ? 'NOTA DE DÉBITO (ADIANTAMENTO)' :
                'NOTA DE DÉBITO (DEBIT NOTE)'}

@@ -19,7 +19,7 @@ export default function Dashboard() {
   const [todayTasks, setTodayTasks] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
-  const COLORS = ['#38bdf8', '#818cf8', '#fbbf24', '#34d399', '#fb7185'];
+  const COLORS = ['#16263c', '#3e83b8', '#b94f22', '#10b981', '#d97706'];
 
   useEffect(() => {
     const fetchStats = async () => {
@@ -105,61 +105,66 @@ export default function Dashboard() {
   };
 
   return (
-    <div className="flex flex-col gap-6 max-w-[1400px] mx-auto w-full">
-      <div className="flex items-center justify-between mb-2">
-        <h1 className="text-2xl font-bold text-slate-900">Visão Geral</h1>
+    <div className="flex flex-col gap-6 w-full">
+      <div className="flex items-center justify-between">
+        <div>
+          <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#3e83b8] block mb-1">
+            Painel Executivo
+          </span>
+          <h1 className="font-heading text-2xl font-bold text-[#16263c]">Visão Geral</h1>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div
           onClick={() => navigate('/clients')}
-          className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between cursor-pointer hover:border-indigo-200 transition-colors"
+          className="bg-white p-6 rounded-lg border border-[#dfe3e6] shadow-sm flex items-center justify-between cursor-pointer hover:border-[#16263c]/40 transition-colors"
         >
           <div>
-            <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1">Total de Clientes</p>
-            <p className="text-2xl font-extrabold text-slate-900">{stats.totalClients}</p>
+            <p className="text-[11px] text-slate-500 uppercase font-semibold tracking-wider mb-1">Total de Clientes</p>
+            <p className="font-heading text-2xl font-extrabold text-[#16263c]">{stats.totalClients}</p>
           </div>
-          <div className="w-12 h-12 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
-            <Users className="w-6 h-6" />
+          <div className="w-11 h-11 rounded-lg bg-[#3e83b8]/10 text-[#3e83b8] flex items-center justify-center">
+            <Users className="w-5 h-5" />
           </div>
         </div>
 
         <div
           onClick={() => navigate('/opportunities')}
-          className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between cursor-pointer hover:border-indigo-200 transition-colors"
+          className="bg-white p-6 rounded-lg border border-[#dfe3e6] shadow-sm flex items-center justify-between cursor-pointer hover:border-[#16263c]/40 transition-colors"
         >
           <div>
-            <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1">Valor em Pipeline</p>
-            <p className="text-2xl font-extrabold text-indigo-600">MZN {stats.totalOppValue.toLocaleString()}</p>
+            <p className="text-[11px] text-slate-500 uppercase font-semibold tracking-wider mb-1">Valor em Pipeline</p>
+            <p className="font-heading text-2xl font-extrabold text-[#b94f22]">MZN {stats.totalOppValue.toLocaleString()}</p>
           </div>
-          <div className="w-12 h-12 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
-            <FolderKanban className="w-6 h-6" />
+          <div className="w-11 h-11 rounded-lg bg-[#b94f22]/10 text-[#b94f22] flex items-center justify-center">
+            <FolderKanban className="w-5 h-5" />
           </div>
         </div>
 
         <div
           onClick={() => navigate('/sales')}
-          className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between cursor-pointer hover:border-indigo-200 transition-colors"
+          className="bg-white p-6 rounded-lg border border-[#dfe3e6] shadow-sm flex items-center justify-between cursor-pointer hover:border-[#16263c]/40 transition-colors"
         >
           <div>
-            <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1">Importações ({stats.inTransit} em trânsito)</p>
-            <p className="text-2xl font-extrabold text-slate-900">{stats.totalSales}</p>
+            <p className="text-[11px] text-slate-500 uppercase font-semibold tracking-wider mb-1">Importações ({stats.inTransit} em trânsito)</p>
+            <p className="font-heading text-2xl font-extrabold text-[#16263c]">{stats.totalSales}</p>
           </div>
-          <div className="w-12 h-12 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-            <ShoppingBag className="w-6 h-6" />
+          <div className="w-11 h-11 rounded-lg bg-emerald-50 text-emerald-700 flex items-center justify-center">
+            <ShoppingBag className="w-5 h-5" />
           </div>
         </div>
 
         <div
           onClick={() => navigate('/agenda')}
-          className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between cursor-pointer hover:border-indigo-200 transition-colors"
+          className="bg-white p-6 rounded-lg border border-[#dfe3e6] shadow-sm flex items-center justify-between cursor-pointer hover:border-[#16263c]/40 transition-colors"
         >
           <div>
-            <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1">Follow-ups Pendentes</p>
-            <p className="text-2xl font-extrabold text-amber-600">{stats.pendingTasks}</p>
+            <p className="text-[11px] text-slate-500 uppercase font-semibold tracking-wider mb-1">Follow-ups Pendentes</p>
+            <p className="font-heading text-2xl font-extrabold text-amber-600">{stats.pendingTasks}</p>
           </div>
-          <div className="w-12 h-12 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
-            <Calendar className="w-6 h-6" />
+          <div className="w-11 h-11 rounded-lg bg-amber-50 text-amber-600 flex items-center justify-center">
+            <Calendar className="w-5 h-5" />
           </div>
         </div>
       </div>
@@ -197,8 +202,8 @@ export default function Dashboard() {
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
-          <h2 className="text-sm font-bold text-slate-800 uppercase mb-6">Oportunidades por Estágio</h2>
+        <div className="bg-white p-6 rounded-lg border border-[#dfe3e6] shadow-sm">
+          <h2 className="font-heading text-sm font-bold text-[#16263c] uppercase tracking-wider mb-6">Oportunidades por Estágio</h2>
           <div className="h-[300px]">
             {oppsData.length > 0 ? (
               <ResponsiveContainer width="100%" height="100%">
@@ -207,7 +212,7 @@ export default function Dashboard() {
                   <XAxis dataKey="name" tick={{ fontSize: 12 }} tickLine={false} axisLine={false} />
                   <YAxis tick={{ fontSize: 12 }} tickLine={false} axisLine={false} allowDecimals={false} />
                   <Tooltip cursor={{ fill: '#f8fafc' }} />
-                  <Bar dataKey="Quantidade" fill="#4f46e5" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="Quantidade" fill="#16263c" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             ) : (
@@ -219,10 +224,10 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm">
+      <div className="bg-white p-6 rounded-lg border border-[#dfe3e6] shadow-sm">
         <div className="flex items-center justify-between mb-6">
-          <h2 className="text-sm font-bold text-slate-800 uppercase">Alertas de Follow-up (Agenda)</h2>
-          <span className="px-3 py-1 bg-amber-50 text-amber-600 text-[10px] font-bold rounded-lg border border-amber-100">PRÓXIMOS EVENTOS</span>
+          <h2 className="font-heading text-sm font-bold text-[#16263c] uppercase tracking-wider">Alertas de Follow-up (Agenda)</h2>
+          <span className="px-3 py-1 bg-amber-50 text-amber-700 text-[10px] font-bold rounded-md border border-amber-200">PRÓXIMOS EVENTOS</span>
         </div>
 
         <div className="flex flex-col gap-2 relative">
@@ -231,14 +236,14 @@ export default function Dashboard() {
           {todayTasks.length > 0 ? (
             todayTasks.map((task) => (
               <div key={task.id} className="relative pl-12 py-3 group">
-                <div className={`absolute left-0 top-[18px] w-8 h-8 -ml-1 rounded-full border-[3px] border-white flex items-center justify-center text-white ${task.priority === 'Alta' ? 'bg-rose-500' : task.priority === 'Média' ? 'bg-amber-500' : 'bg-blue-400'}`}>
+                <div className={`absolute left-0 top-[18px] w-8 h-8 -ml-1 rounded-full border-[3px] border-white flex items-center justify-center text-white ${task.priority === 'Alta' ? 'bg-rose-500' : task.priority === 'Média' ? 'bg-[#b94f22]' : 'bg-[#3e83b8]'}`}>
                   <Clock className="w-3.5 h-3.5" />
                 </div>
-                <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 group-hover:border-indigo-200 transition-colors">
+                <div className="bg-[#f7f7f3] p-4 rounded-lg border border-[#dfe3e6] group-hover:border-[#16263c]/40 transition-colors">
                   <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-bold text-slate-800">{task.title}</p>
-                    <span className="text-[11px] font-bold px-3 py-1 rounded-full bg-white text-slate-500 border border-slate-200 shadow-sm shrink-0">
-                      {task.date?.toDate?.()?.toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) || '-'}
+                    <p className="text-sm font-bold text-[#16263c]">{task.title}</p>
+                    <span className="text-[11px] font-bold px-3 py-1 rounded-full bg-white text-slate-600 border border-[#dfe3e6] shrink-0">
+                      {task.date?.toDate?.()?.toLocaleString('pt-PT', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) || '-'}
                     </span>
                   </div>
                   {task.description && <p className="text-xs text-slate-500 mt-2 line-clamp-2">{task.description}</p>}
@@ -251,7 +256,7 @@ export default function Dashboard() {
               <button
                 type="button"
                 onClick={() => navigate('/agenda')}
-                className="text-indigo-500 hover:underline font-medium cursor-pointer"
+                className="text-[#b94f22] hover:underline font-semibold cursor-pointer"
               >
                 Adicionar na agenda.
               </button>
